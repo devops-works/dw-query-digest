@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ type logentry struct {
 type query struct {
 	Time         time.Time
 	User         string
+	AltUser      string
 	Client       string
 	ID           int
 	Schema       string
@@ -32,10 +34,17 @@ type query struct {
 	RowsExamined int
 	RowsAffected int
 	BytesSent    int
+	FullQuery    string
+	FingerPrint  string
 }
 
 func main() {
-	log.SetLevel(log.DebugLevel)
+	// defer profile.Start().Stop()
+
+	// trace.Start(os.Stderr)
+	// defer trace.Stop()
+
+	log.SetLevel(log.ErrorLevel)
 	// closed by filereader
 	logentries := make(chan []string, 1000)
 	// closed by us
@@ -140,7 +149,7 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- []string) {
 		// If we have `# Time`, send current entry and wipe clean
 		if strings.HasPrefix(line, "# Time") {
 			lines <- curentry
-			curentry = curentry[:0]
+			curentry = make([]string, 0, 6) //curentry[:0]
 		}
 		curentry = append(curentry, line)
 
@@ -154,25 +163,47 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- []string) {
 }
 
 func worker(wg *sync.WaitGroup, lines <-chan []string, entries chan<- query) {
-
 	defer wg.Done()
 
 	qry := query{}
+	// var err error
 
 	for lineblock := range lines {
 		for _, line := range lineblock {
-			// fmt.Printf("%d => %s\n", line[0]+line[2], line)
-			switch line[0] + line[2] {
-			case 119: // "#T"
-				qry.Time = time.Now()
-			case 120: // "#U"
-				qry.User = "foobar"
-			case 118: // "#S"
-				qry.Schema = "fizzbuz"
-			case 116: // "#Q"
-				qry.QueryTime = 0
-			case 101: // "#B"
-				qry.BytesSent = 12
+			// fmt.Println(strings.ToUpper(line[0:4]))
+			switch strings.ToUpper(line[0:4]) {
+			case "# TI":
+				// # Time: 2018-12-17T15:18:58.744913Z
+				qry.Time, _ = time.Parse(time.RFC3339, strings.Split(line, " ")[2])
+			case "# US":
+				// # User@Host: agency[agency] @  [192.168.0.102]  Id: 3502988
+				s := strings.Replace(line, "[", " ", -1)
+				s = strings.Replace(s, "]", " ", -1)
+				fmt.Sscanf(s, "# User@Host: %s %s  @   %s   Id: %d", &qry.AltUser, &qry.User, &qry.Client, &qry.ID)
+			case "# SC": // "#S"
+				//# Schema: taskl-production  Last_errno: 0  Killed: 0
+				fmt.Sscanf(line, "# Schema: %s  Last_errno: %d  Killed: %d", &qry.Schema, &qry.LastErrno, &qry.Killed)
+			case "# QU": // "#Q"
+				// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
+				fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d",
+					&qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+			case "# BY":
+				// # Bytes_sent: 561
+				fmt.Sscanf(line, "# Bytes_sent: %d", &qry.BytesSent)
+
+				// qry.BytesSent, err = strconv.Atoi(strings.Split(line, " ")[2])
+				// if err != nil {
+				// 	log.Errorf("Error converting bytes: %v", err)
+				// 	qry.BytesSent = 0
+				// }
+			case "SET ":
+			case "USE ":
+			case "# AD":
+				continue
+			default:
+				qry.FullQuery = line
+				fingerprint(&qry)
+				// fmt.Println(line)
 			}
 		}
 		entries <- qry
@@ -180,24 +211,82 @@ func worker(wg *sync.WaitGroup, lines <-chan []string, entries chan<- query) {
 	log.Debug("worker exiting")
 }
 
-// # Time: 2018-12-17T15:18:58.744913Z
-// # User@Host: agency[agency] @  [192.168.0.102]  Id: 3502988
-// # Schema: taskl-production  Last_errno: 0  Killed: 0
-// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
-// # Bytes_sent: 561
+func fingerprint(qry *query) {
+	//
+	// From pt-query-digest man page
+	//
+	// 1·   Group all SELECT queries from mysqldump together, even if they are against different tables.
+	//      The same applies to all queries from pt-table-checksum.
+	// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
+	// 3·   Strip comments.
+	// 4·   Abstract the databases in USE statements, so all USE statements are grouped together.
+	// 5·   Replace all literals, such as quoted strings.  For efficiency, the code that replaces literal numbers is
+	//      somewhat non-selective, and might replace some things as numbers when they really are not.
+	//      Hexadecimal literals are also replaced.  NULL is treated as a literal.  Numbers embedded in identifiers are
+	//	    also replaced, so tables named similarly will be fingerprinted to the same values
+	//      (e.g. users_2009 and users_2010 will fingerprint identically).
+	// 6·   Collapse all whitespace into a single space.
+	// 7·   Lowercase the entire query.
+	// 8·   Replace all literals inside of IN() and VALUES() lists with a single placeholder, regardless of cardinality.
+	// 9·   Collapse multiple identical UNION queries into a single one.
+
+	// 1. skipped
+	// 2. shorten inserts
+
+	re := regexp.MustCompile(`(?i)(insert .*) values .*`)
+	match := re.FindStringSubmatch(qry.FullQuery)
+	if len(match) == 2 {
+		qry.FingerPrint = match[1]
+		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
+	}
+
+	// 3. strip comments
+	// C-style naive approach
+	re = regexp.MustCompile(`(.*)/\*.*\*/(.*)`)
+	match = re.FindStringSubmatch(qry.FullQuery)
+	if len(match) == 2 {
+		qry.FingerPrint = match[1]
+		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
+	}
+
+	// SQL style
+	re = regexp.MustCompile(`(.*) --`)
+	match = re.FindStringSubmatch(qry.FullQuery)
+	if len(match) == 2 {
+		qry.FingerPrint = match[1]
+		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
+	}
+
+}
 
 func aggregator(queries <-chan query, done chan<- bool) {
 	log.Info("aggregator started")
 
 	cumbytes := 0
 	countqry := 0
+	start := time.Now()
+	end := time.Unix(0, 0)
 
 	for qry := range queries {
 		countqry++
 		cumbytes += qry.BytesSent
+		if start.After(qry.Time) {
+			start = qry.Time
+		}
+		if end.Before(qry.Time) {
+			end = qry.Time
+		}
+		//fmt.Printf("user:  %s / %s, time: %s\n", qry.User, qry.AltUser, qry.Time)
+
 	}
 
-	fmt.Printf("saw %d bytes over %d queries\n", cumbytes, countqry)
+	fmt.Printf("Total queries : %.1fM (%d)\n", (float64)(countqry/1e6), countqry)
+	fmt.Printf("Total bytes   : %.1fM (%d)\n", (float64)(cumbytes/1e6), cumbytes)
+	fmt.Printf("Capture start : %s\n", start)
+	fmt.Printf("Capture end   : %s\n", end)
+	fmt.Printf("Duration      : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
+	fmt.Printf("QPS           : %d\n", countqry/int((end.Sub(start)/time.Second)))
+
 	log.Info("aggregator exiting")
 
 	done <- true
