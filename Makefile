@@ -32,7 +32,8 @@ release: static docker; $(info $(M) stripping release executable…) @ ## Build 
 	$Q strip $(BIN)/$(PACKAGE)
 
 docker: ; $(info $(M) building docker image…) @ ## Build docker image
-	$Q docker build . -t devopsworks/dw-query-digest:$(VERSION)
+	$Q docker build --build-arg version=$(VERSION) --build-arg builddate=$(DATE) . -t devopsworks/dw-query-digest:$(VERSION)
+
 
 push: ; $(info $(M) pushing docker image…) @ ## Push docker image to dockerhub
 	$Q docker build . -t devopsworks/dw-query-digest:$(VERSION)
