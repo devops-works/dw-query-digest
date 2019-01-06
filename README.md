@@ -19,7 +19,24 @@ in a report.
 
 # Usage
 
+## Binary
+
 `bin/dw-query-digest [options] <file>`
+
+## Source
+
+Requires Go 1.11+.
+
+```bash
+make
+bin/dw-query-digest  [options] <file>
+```
+
+## Docker
+
+`cd` where your slow query log is, and:
+
+`docker run -v $(pwd):/data devopsworks/dw-query-digest:v0.2 /data/slow-query.log`
 
 ## Options
 
