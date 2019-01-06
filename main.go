@@ -73,20 +73,20 @@ type querystats struct {
 	RowsAffected    []float64
 }
 
-// Len is part of sort.Interface.
-func (d querystatsSlice) Len() int {
-	return len(d)
-}
+// // Len is part of sort.Interface.
+// func (d querystatsSlice) Len() int {
+// 	return len(d)
+// }
 
-// Swap is part of sort.Interface.
-func (d querystatsSlice) Swap(i, j int) {
-	d[i], d[j] = d[j], d[i]
-}
+// // Swap is part of sort.Interface.
+// func (d querystatsSlice) Swap(i, j int) {
+// 	d[i], d[j] = d[j], d[i]
+// }
 
-// Less is part of sort.Interface. We use count as the value to sort by
-func (d querystatsSlice) Less(i, j int) bool {
-	return d[i].Count < d[j].Count
-}
+// // Less is part of sort.Interface. We use count as the value to sort by
+// func (d querystatsSlice) Less(i, j int) bool {
+// 	return d[i].CumQueryTime < d[j].CumQueryTime
+// }
 
 // serverinfo holds server information gathered from first 2 log lines
 type serverinfo struct {
@@ -109,6 +109,9 @@ type options struct {
 	ShowProgress bool
 	Debug        bool
 	Quiet        bool
+	Top          int
+	SortKey      string
+	SortReverse  bool
 }
 
 // actual global variables
@@ -182,6 +185,9 @@ func main() {
 	flag.BoolVar(&Config.ShowProgress, "progress", false, "Display progress bar")
 	flag.BoolVar(&Config.Debug, "debug", false, "Show debugging information (verbose !)")
 	flag.BoolVar(&Config.Quiet, "quiet", false, "Display only the report")
+	flag.IntVar(&Config.Top, "top", 20, "Top queries to display")
+	flag.StringVar(&Config.SortKey, "sort", "time", "Sort key (time (default), count, bytes, lock[time], [rows]sent, [rows]examined, [rows]affected")
+	flag.BoolVar(&Config.SortReverse, "reverse", false, "Reverse sort (lowest first)")
 	var showversion = flag.Bool("version", false, "Show version & exit")
 
 	flag.Parse()
@@ -512,21 +518,21 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	}
 
 	fmt.Printf("\n# Server Info\n\n")
-	fmt.Printf("\tBinary             : %s\n", servermeta.Binary)
-	fmt.Printf("\tVersionShort       : %s\n", servermeta.VersionShort)
-	fmt.Printf("\tVersion            : %s\n", servermeta.Version)
-	fmt.Printf("\tVersionDescription : %s\n", servermeta.VersionDescription)
-	fmt.Printf("\tTCPPort            : %d\n", servermeta.TCPPort)
-	fmt.Printf("\tUnixSocket         : %s\n", servermeta.UnixSocket)
+	fmt.Printf("  Binary             : %s\n", servermeta.Binary)
+	fmt.Printf("  VersionShort       : %s\n", servermeta.VersionShort)
+	fmt.Printf("  Version            : %s\n", servermeta.Version)
+	fmt.Printf("  VersionDescription : %s\n", servermeta.VersionDescription)
+	fmt.Printf("  TCPPort            : %d\n", servermeta.TCPPort)
+	fmt.Printf("  UnixSocket         : %s\n", servermeta.UnixSocket)
 
 	fmt.Printf("\n# Global Statistics\n\n")
-	fmt.Printf("\tTotal queries      : %.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
-	fmt.Printf("\tTotal bytes        : %.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
-	fmt.Printf("\tTotal fingerprints : %d\n", len(querylist))
-	fmt.Printf("\tCapture start      : %s\n", start)
-	fmt.Printf("\tCapture end        : %s\n", end)
-	fmt.Printf("\tDuration           : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
-	fmt.Printf("\tQPS                : %.0f\n", float64(time.Second)*(float64(countqry)/float64(end.Sub(start))))
+	fmt.Printf("  Total queries      : %.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
+	fmt.Printf("  Total bytes        : %.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
+	fmt.Printf("  Total fingerprints : %d\n", len(querylist))
+	fmt.Printf("  Capture start      : %s\n", start)
+	fmt.Printf("  Capture end        : %s\n", end)
+	fmt.Printf("  Duration           : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
+	fmt.Printf("  QPS                : %.0f\n", float64(time.Second)*(float64(countqry)/float64(end.Sub(start))))
 
 	fmt.Printf("\n# Queries\n")
 
@@ -535,32 +541,71 @@ func aggregator(queries <-chan query, done chan<- bool) {
 		s = append(s, d)
 	}
 
-	sort.Sort(sort.Reverse(s))
+	sort.Slice(s, func(i, j int) bool {
+		var a, b float64
 
-	// sort.Slice(querylist[:], func(i, j [32]byte) bool {
-	// 	return querylist[i].Calls < querylist[j].Calls
-	// })
+		switch strings.ToUpper(Config.SortKey) {
 
-	for _, val := range s {
-		val.Concurrency = (val.CumQueryTime * float64(time.Second)) / float64(end.Sub(start))
+		case "COUNT":
+			a = float64(s[i].Count)
+			b = float64(s[j].Count)
+		case "BYTES":
+			a = float64(s[i].CumBytesSent)
+			b = float64(s[j].CumBytesSent)
+		case "LOCK":
+		case "LOCKTIME":
+			a = float64(s[i].CumLockTime)
+			b = float64(s[j].CumLockTime)
+		case "ROWSSENT":
+		case "SENT":
+			a = float64(s[i].CumRowsSent)
+			b = float64(s[j].CumRowsSent)
+		case "ROWSEXAMINED":
+		case "EXAMINED":
+			a = float64(s[i].CumRowsExamined)
+			b = float64(s[j].CumRowsExamined)
+		case "ROWSAFFECTED":
+		case "AFFECTED":
+			a = float64(s[i].CumRowsAffected)
+			b = float64(s[j].CumRowsAffected)
+		// case "TIME":
+		default:
+			a = s[i].CumQueryTime
+			b = s[j].CumQueryTime
+		}
+
+		if Config.SortReverse {
+			return a < b
+		}
+		return a > b
+	})
+
+	// Keep top queries
+	if len(s) > Config.Top {
+		s = s[:Config.Top]
+	}
+
+	ffactor := 100.0 * float64(time.Second) / float64(end.Sub(start))
+	for idx, val := range s {
+		val.Concurrency = val.CumQueryTime * ffactor
 		sort.Float64s(val.QueryTime)
-		fmt.Printf("\nQuery: %x\n", val.Hash[0:5])
-		fmt.Printf("\tFingerprint     : %s\n", val.FingerPrint)
-		fmt.Printf("\tCalls           : %d\n", val.Count)
-		fmt.Printf("\tCumErrored      : %d\n", val.CumErrored)
-		fmt.Printf("\tCumKilled       : %d\n", val.CumKilled)
-		fmt.Printf("\tCumQueryTime    : %s\n", fsecsToDuration(val.CumQueryTime))
-		fmt.Printf("\tCumLockTime     : %s\n", fsecsToDuration(val.CumLockTime))
-		fmt.Printf("\tCumRowsSent     : %d\n", val.CumRowsSent)
-		fmt.Printf("\tCumRowsExamined : %d\n", val.CumRowsExamined)
-		fmt.Printf("\tCumRowsAffected : %d\n", val.CumRowsAffected)
-		fmt.Printf("\tCumBytesSent    : %d\n", val.CumBytesSent)
-		fmt.Printf("\tConcurrency     : %.2f\n", val.Concurrency)
-		fmt.Printf("\tmin / max time  : %s / %s\n", fsecsToDuration(val.QueryTime[0]), fsecsToDuration(val.QueryTime[len(val.QueryTime)-1]))
-		fmt.Printf("\tmean time       : %s\n", fsecsToDuration(stat.Mean(val.QueryTime, nil)))
-		fmt.Printf("\tp50 time        : %s\n", fsecsToDuration(stat.Quantile(0.5, 1, val.QueryTime, nil)))
-		fmt.Printf("\tp95 time        : %s\n", fsecsToDuration(stat.Quantile(0.95, 1, val.QueryTime, nil)))
-		fmt.Printf("\tstddev time     : %s\n", fsecsToDuration(stat.StdDev(val.QueryTime, nil)))
+		fmt.Printf("\n# Query #%d: %x\n\n", idx+1, val.Hash[0:5])
+		fmt.Printf("  Fingerprint     : %s\n", val.FingerPrint)
+		fmt.Printf("  Calls           : %d\n", val.Count)
+		fmt.Printf("  CumErrored      : %d\n", val.CumErrored)
+		fmt.Printf("  CumKilled       : %d\n", val.CumKilled)
+		fmt.Printf("  CumQueryTime    : %s\n", fsecsToDuration(val.CumQueryTime))
+		fmt.Printf("  CumLockTime     : %s\n", fsecsToDuration(val.CumLockTime))
+		fmt.Printf("  CumRowsSent     : %d\n", val.CumRowsSent)
+		fmt.Printf("  CumRowsExamined : %d\n", val.CumRowsExamined)
+		fmt.Printf("  CumRowsAffected : %d\n", val.CumRowsAffected)
+		fmt.Printf("  CumBytesSent    : %d\n", val.CumBytesSent)
+		fmt.Printf("  Concurrency     : %2.2f%%\n", val.Concurrency)
+		fmt.Printf("  min / max time  : %s / %s\n", fsecsToDuration(val.QueryTime[0]), fsecsToDuration(val.QueryTime[len(val.QueryTime)-1]))
+		fmt.Printf("  mean time       : %s\n", fsecsToDuration(stat.Mean(val.QueryTime, nil)))
+		fmt.Printf("  p50 time        : %s\n", fsecsToDuration(stat.Quantile(0.5, 1, val.QueryTime, nil)))
+		fmt.Printf("  p95 time        : %s\n", fsecsToDuration(stat.Quantile(0.95, 1, val.QueryTime, nil)))
+		fmt.Printf("  stddev time     : %s\n", fsecsToDuration(stat.StdDev(val.QueryTime, nil)))
 		// fmt.Printf("\tmax time        : %.2f\n", stat.Max(0.95, 1, val.QueryTime, nil))
 
 	}
