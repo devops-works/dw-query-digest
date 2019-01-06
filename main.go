@@ -25,6 +25,7 @@ import (
 // logentry holds a complete query entry from log file
 type logentry struct {
 	lines [9]string
+	pos   int
 }
 
 // query holds a single query with metrics
@@ -48,8 +49,11 @@ type query struct {
 	Hash         [32]byte
 }
 
+type querystatsSlice []*querystats
+
 // questystats type & methods
 type querystats struct {
+	Hash            [32]byte
 	Count           int
 	FingerPrint     string
 	CumQueryTime    float64
@@ -67,6 +71,21 @@ type querystats struct {
 	RowsSent        []float64
 	RowsExamined    []float64
 	RowsAffected    []float64
+}
+
+// Len is part of sort.Interface.
+func (d querystatsSlice) Len() int {
+	return len(d)
+}
+
+// Swap is part of sort.Interface.
+func (d querystatsSlice) Swap(i, j int) {
+	d[i], d[j] = d[j], d[i]
+}
+
+// Less is part of sort.Interface. We use count as the value to sort by
+func (d querystatsSlice) Less(i, j int) bool {
+	return d[i].Count < d[j].Count
 }
 
 // serverinfo holds server information gathered from first 2 log lines
@@ -298,7 +317,7 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 		servermeta.Version = servermeta.VersionShort + matches[3]
 		servermeta.VersionDescription = matches[4]
 		servermeta.TCPPort, _ = strconv.Atoi(strings.Split(listeners, " ")[2])
-		servermeta.UnixSocket = strings.Split(listeners, ":")[2]
+		servermeta.UnixSocket = strings.TrimLeft(strings.Split(listeners, ":")[2], " ")
 	}
 
 	// The entry we'll fill
@@ -339,6 +358,7 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 
 		// If we have `# Time`, send current entry and wipe clean
 		if strings.HasPrefix(line, "# Time") {
+			curentry.pos = read
 			lines <- curentry
 			curline = 0
 			for i := range curentry.lines {
@@ -360,10 +380,10 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 	defer wg.Done()
 
-	qry := query{}
 	// var err error
 
 	for lineblock := range lines {
+		qry := query{}
 		// fmt.Printf("HERE: %v", lineblock.lines)
 		for _, line := range lineblock.lines {
 			if line == "" {
@@ -401,15 +421,24 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				continue
 			default:
 				qry.FullQuery = line
+				if qry.FullQuery == "" {
+					log.Errorf("worker: got empty query at line %d", lineblock.pos)
+				}
 
 				// fmt.Printf("# call   : %s - %s\n", qry.FingerPrint, line)
 				fingerprint(&qry)
+				if qry.FingerPrint == "" {
+					log.Errorf("worker: got empty fingerprint after fingerprinting at line %d", lineblock.pos)
+				}
 			}
+		}
+
+		// We had no queries so we skip this logentries set
+		if qry.FingerPrint == "" {
+			continue
 		}
 		qry.Hash = sha256.Sum256([]byte(qry.FingerPrint))
 		entries <- qry
-		qry = query{}
-
 	}
 	log.Debug("worker exiting")
 }
@@ -442,6 +471,10 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	end := time.Unix(0, 0)
 
 	for qry := range queries {
+		if qry.FingerPrint == "" {
+			log.Errorf("aggregator: got empty fingerprint for %v", qry)
+		}
+
 		countqry++
 		cumbytes += qry.BytesSent
 		if start.After(qry.Time) {
@@ -452,12 +485,14 @@ func aggregator(queries <-chan query, done chan<- bool) {
 		}
 		//fmt.Printf("user:  %s / %s, time: %s\n", qry.User, qry.AltUser, qry.Time)
 		if _, ok := querylist[qry.Hash]; !ok {
-			querylist[qry.Hash] = &querystats{FingerPrint: qry.FingerPrint}
+			// fmt.Printf("FP: %s | HASH: %x\n", qry.FingerPrint, qry.Hash)
+			querylist[qry.Hash] = &querystats{FingerPrint: qry.FingerPrint, Hash: qry.Hash}
 		}
 
 		if qry.LastErrno != 0 {
 			querylist[qry.Hash].CumErrored++
 		}
+
 		querylist[qry.Hash].Count++
 		querylist[qry.Hash].CumKilled += qry.Killed
 		querylist[qry.Hash].CumQueryTime += qry.QueryTime
@@ -476,7 +511,7 @@ func aggregator(queries <-chan query, done chan<- bool) {
 
 	}
 
-	fmt.Printf("\n# Server Info\n")
+	fmt.Printf("\n# Server Info\n\n")
 	fmt.Printf("\tBinary             : %s\n", servermeta.Binary)
 	fmt.Printf("\tVersionShort       : %s\n", servermeta.VersionShort)
 	fmt.Printf("\tVersion            : %s\n", servermeta.Version)
@@ -484,9 +519,9 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	fmt.Printf("\tTCPPort            : %d\n", servermeta.TCPPort)
 	fmt.Printf("\tUnixSocket         : %s\n", servermeta.UnixSocket)
 
-	fmt.Printf("\n# Global Statistics\n")
-	fmt.Printf("\tTotal queries      : %8.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
-	fmt.Printf("\tTotal bytes        : %8.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
+	fmt.Printf("\n# Global Statistics\n\n")
+	fmt.Printf("\tTotal queries      : %.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
+	fmt.Printf("\tTotal bytes        : %.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
 	fmt.Printf("\tTotal fingerprints : %d\n", len(querylist))
 	fmt.Printf("\tCapture start      : %s\n", start)
 	fmt.Printf("\tCapture end        : %s\n", end)
@@ -495,10 +530,21 @@ func aggregator(queries <-chan query, done chan<- bool) {
 
 	fmt.Printf("\n# Queries\n")
 
-	for key, val := range querylist {
+	s := make(querystatsSlice, 0, len(querylist))
+	for _, d := range querylist {
+		s = append(s, d)
+	}
+
+	sort.Sort(sort.Reverse(s))
+
+	// sort.Slice(querylist[:], func(i, j [32]byte) bool {
+	// 	return querylist[i].Calls < querylist[j].Calls
+	// })
+
+	for _, val := range s {
 		val.Concurrency = (val.CumQueryTime * float64(time.Second)) / float64(end.Sub(start))
 		sort.Float64s(val.QueryTime)
-		fmt.Printf("\nQuery: %x\n", key[0:5])
+		fmt.Printf("\nQuery: %x\n", val.Hash[0:5])
 		fmt.Printf("\tFingerprint     : %s\n", val.FingerPrint)
 		fmt.Printf("\tCalls           : %d\n", val.Count)
 		fmt.Printf("\tCumErrored      : %d\n", val.CumErrored)
