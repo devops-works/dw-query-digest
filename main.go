@@ -99,31 +99,13 @@ var servermeta serverinfo
 // Config holds global
 var Config options
 
-func main() {
+// Version is set via linker
+var Version string
 
-	// var debug = flag.BoolVar(&config."-d", false, "debug mode (very verbose !)")
-	// var quiet = flag.Bool("-q", false, "quiet mode (only reporting)")
-	flag.BoolVar(&Config.ShowProgress, "progress", false, "Display progress bar")
-	flag.BoolVar(&Config.Debug, "debug", false, "Show debugging information (verbose !)")
-	flag.BoolVar(&Config.Quiet, "quiet", false, "Display only the report")
-	flag.Parse()
+// BuildDate is set via linker
+var BuildDate string
 
-	log.SetLevel(log.InfoLevel)
-
-	if Config.Debug {
-		log.SetLevel(log.DebugLevel)
-	}
-
-	if Config.Quiet {
-		log.SetLevel(log.ErrorLevel)
-	}
-
-	// TODO: bind to -q option
-	// log.SetOutput(ioutil.Discard)
-	// trace.Start(os.Stderr)
-	// defer trace.Stop()
-	// defer profile.Start().Stop()
-
+func init() {
 	// Regexps initialization
 	// Create regexps entries for query normalization
 	//
@@ -147,29 +129,64 @@ func main() {
 		// 1·   Group all SELECT queries from mysqldump together
 		// ... not implemented ...
 		// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
-		{regexp.MustCompile(`(insert .*) values .*`), "$1"},
+		{regexp.MustCompile(`(insert .*) values .*`), "$1 values (?)"},
 		// 3·   Strip comments.
 		{regexp.MustCompile(`(.*)/\*.*\*/(.*)`), "$1$2"},
-		{regexp.MustCompile(`(.*) --`), "$1"},
+		{regexp.MustCompile(`(.*) --.*`), "$1"},
 		// 4·   Abstract the databases in USE statements
 		// ... not implemented ... since I don't really get it
 		// 5·   Sort of...
 		{regexp.MustCompile(`\s*([!><=]{1,2})\s*'[^']+'`), " $1 ?"},
+		{regexp.MustCompile(`\s*([!><=]{1,2})\s*\x60[^\x60]+\x60`), " $1 ?"},
 		{regexp.MustCompile(`\s*([!><=]{1,2})\s*[\.a-zA-Z0-9_-]+`), " $1 ?"},
 		{regexp.MustCompile(`\s*(not)?\s+like\s+'[^']+'`), " not like ?"},
+		// {regexp.MustCompile(`\s*(not)?\s+like\s+\x60[^\x60]+\x60`), " not like ?"}, // Not sure this one (LIKE `somestuff`) is necessary
 		// 6·   Collapse all whitespace into a single space.
 		{regexp.MustCompile(`[\s]{2,}`), " "},
+		{regexp.MustCompile(`\s$`), ""}, // trim space at end
 		// 7·   Lowercase the entire query.
 		// ... implemented elsewhere ...
 		// 8·   Replace all literals inside of IN() and VALUES() lists with a single placeholder
 		// IN (...), VALUES, OFFSET
 		{regexp.MustCompile(`in\s+\([^\)]+\)`), "in (?)"},
-		{regexp.MustCompile(`values\s+\([^\)]+\)`), "values (?)"},
+		// {regexp.MustCompile(`values\s+\([^\)]+\)`), "values (?)"},
 		{regexp.MustCompile(`offset\s+\d+`), "offset ?"},
 		// 9·   Collapse multiple identical UNION queries into a single one.
 		// ... not implemented ...
 
 	}
+}
+func main() {
+
+	// var debug = flag.BoolVar(&config."-d", false, "debug mode (very verbose !)")
+	// var quiet = flag.Bool("-q", false, "quiet mode (only reporting)")
+	flag.BoolVar(&Config.ShowProgress, "progress", false, "Display progress bar")
+	flag.BoolVar(&Config.Debug, "debug", false, "Show debugging information (verbose !)")
+	flag.BoolVar(&Config.Quiet, "quiet", false, "Display only the report")
+	var showversion = flag.Bool("version", false, "Show version & exit")
+
+	flag.Parse()
+
+	if *showversion {
+		fmt.Printf("dw-query-digest version %s, built %s\n", Version, BuildDate)
+		os.Exit(0)
+	}
+
+	log.SetLevel(log.InfoLevel)
+
+	if Config.Debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	if Config.Quiet {
+		log.SetLevel(log.ErrorLevel)
+	}
+
+	// TODO: bind to -q option
+	// log.SetOutput(ioutil.Discard)
+	// trace.Start(os.Stderr)
+	// defer trace.Stop()
+	// defer profile.Start().Stop()
 
 	// TODO: bug with UPDATE `workers` SET `latest_availability_updated_at` = NOW() WHERE `id`=689597;
 	// NOW() is replaced by ?()
@@ -411,7 +428,7 @@ func fingerprint(qry *query) {
 	for _, r := range regexeps {
 		qry.FingerPrint = r.Rexp.ReplaceAllString(qry.FingerPrint, r.Repl)
 	}
-	log.Debugf("fingerprint normalized query to: %s", qry.FullQuery)
+	log.Debugf("fingerprint normalized query to: %s", qry.FingerPrint)
 }
 
 func aggregator(queries <-chan query, done chan<- bool) {
@@ -474,7 +491,7 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	fmt.Printf("\tCapture start      : %s\n", start)
 	fmt.Printf("\tCapture end        : %s\n", end)
 	fmt.Printf("\tDuration           : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
-	fmt.Printf("\tQPS                : %d\n", countqry/int((end.Sub(start)/time.Second)))
+	fmt.Printf("\tQPS                : %.0f\n", float64(time.Second)*(float64(countqry)/float64(end.Sub(start))))
 
 	fmt.Printf("\n# Queries\n")
 
