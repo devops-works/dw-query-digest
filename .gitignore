@@ -1,0 +1,6 @@
+/.vscode
+/bin
+*.log
+*.ptqd
+*.out
+dw-query-digest

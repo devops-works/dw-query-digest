@@ -3,28 +3,37 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
 	"runtime"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"gonum.org/v1/gonum/stat"
+	"gopkg.in/cheggaaa/pb.v1"
+
 	log "github.com/sirupsen/logrus"
 )
 
+// logentry holds a complete query entry from log file
 type logentry struct {
-	Lines []string
+	lines [9]string
 }
 
+// query holds a single query with metrics
 type query struct {
 	Time         time.Time
 	User         string
 	AltUser      string
 	Client       string
-	ID           int
+	ConnectionID int
 	Schema       string
 	LastErrno    int
 	Killed       int
@@ -36,25 +45,150 @@ type query struct {
 	BytesSent    int
 	FullQuery    string
 	FingerPrint  string
+	Hash         [32]byte
 }
 
-func main() {
-	// defer profile.Start().Stop()
+// questystats type & methods
+type querystats struct {
+	Count           int
+	FingerPrint     string
+	CumQueryTime    float64
+	CumBytesSent    int
+	CumLockTime     float64
+	CumRowsSent     int
+	CumRowsExamined int
+	CumRowsAffected int
+	CumKilled       int
+	CumErrored      int
+	Concurrency     float64
+	QueryTime       []float64
+	BytesSent       []float64
+	LockTime        []float64
+	RowsSent        []float64
+	RowsExamined    []float64
+	RowsAffected    []float64
+}
 
+// serverinfo holds server information gathered from first 2 log lines
+type serverinfo struct {
+	Binary             string
+	VersionShort       string
+	Version            string
+	VersionDescription string
+	TCPPort            int
+	UnixSocket         string
+}
+
+// replacements holds list of regexps we'll apply to queries for normalization
+type replacements struct {
+	Rexp *regexp.Regexp
+	Repl string
+}
+
+// options holds options we got in arguments
+type options struct {
+	ShowProgress bool
+	Debug        bool
+	Quiet        bool
+}
+
+// actual global variables
+var regexeps []replacements
+var servermeta serverinfo
+
+// Config holds global
+var Config options
+
+func main() {
+
+	// var debug = flag.BoolVar(&config."-d", false, "debug mode (very verbose !)")
+	// var quiet = flag.Bool("-q", false, "quiet mode (only reporting)")
+	flag.BoolVar(&Config.ShowProgress, "progress", false, "Display progress bar")
+	flag.BoolVar(&Config.Debug, "debug", false, "Show debugging information (verbose !)")
+	flag.BoolVar(&Config.Quiet, "quiet", false, "Display only the report")
+	flag.Parse()
+
+	log.SetLevel(log.InfoLevel)
+
+	if Config.Debug {
+		log.SetLevel(log.DebugLevel)
+	}
+
+	if Config.Quiet {
+		log.SetLevel(log.ErrorLevel)
+	}
+
+	// TODO: bind to -q option
+	// log.SetOutput(ioutil.Discard)
 	// trace.Start(os.Stderr)
 	// defer trace.Stop()
+	// defer profile.Start().Stop()
 
-	log.SetLevel(log.ErrorLevel)
+	// Regexps initialization
+	// Create regexps entries for query normalization
+	//
+	// From pt-query-digest man page (package QueryRewriter section)
+	//
+	// 1·   Group all SELECT queries from mysqldump together, even if they are against different tables.
+	//      The same applies to all queries from pt-table-checksum.
+	// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
+	// 3·   Strip comments.
+	// 4·   Abstract the databases in USE statements, so all USE statements are grouped together.
+	// 5·   Replace all literals, such as quoted strings.  For efficiency, the code that replaces literal numbers is
+	//      somewhat non-selective, and might replace some things as numbers when they really are not.
+	//      Hexadecimal literals are also replaced.  NULL is treated as a literal.  Numbers embedded in identifiers are
+	//	    also replaced, so tables named similarly will be fingerprinted to the same values
+	//      (e.g. users_2009 and users_2010 will fingerprint identically).
+	// 6·   Collapse all whitespace into a single space.
+	// 7·   Lowercase the entire query.
+	// 8·   Replace all literals inside of IN() and VALUES() lists with a single placeholder, regardless of cardinality.
+	// 9·   Collapse multiple identical UNION queries into a single one.
+	regexeps = []replacements{
+		// 1·   Group all SELECT queries from mysqldump together
+		// ... not implemented ...
+		// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
+		{regexp.MustCompile(`(insert .*) values .*`), "$1"},
+		// 3·   Strip comments.
+		{regexp.MustCompile(`(.*)/\*.*\*/(.*)`), "$1$2"},
+		{regexp.MustCompile(`(.*) --`), "$1"},
+		// 4·   Abstract the databases in USE statements
+		// ... not implemented ... since I don't really get it
+		// 5·   Sort of...
+		{regexp.MustCompile(`\s*([!><=]{1,2})\s*'[^']+'`), " $1 ?"},
+		{regexp.MustCompile(`\s*([!><=]{1,2})\s*[\.a-zA-Z0-9_-]+`), " $1 ?"},
+		{regexp.MustCompile(`\s*(not)?\s+like\s+'[^']+'`), " not like ?"},
+		// 6·   Collapse all whitespace into a single space.
+		{regexp.MustCompile(`[\s]{2,}`), " "},
+		// 7·   Lowercase the entire query.
+		// ... implemented elsewhere ...
+		// 8·   Replace all literals inside of IN() and VALUES() lists with a single placeholder
+		// IN (...), VALUES, OFFSET
+		{regexp.MustCompile(`in\s+\([^\)]+\)`), "in (?)"},
+		{regexp.MustCompile(`values\s+\([^\)]+\)`), "values (?)"},
+		{regexp.MustCompile(`offset\s+\d+`), "offset ?"},
+		// 9·   Collapse multiple identical UNION queries into a single one.
+		// ... not implemented ...
+
+	}
+
+	// TODO: bug with UPDATE `workers` SET `latest_availability_updated_at` = NOW() WHERE `id`=689597;
+	// NOW() is replaced by ?()
+
+	// Create channels
 	// closed by filereader
-	logentries := make(chan []string, 1000)
+	logentries := make(chan logentry, 1000)
+
 	// closed by us
 	queries := make(chan query, 1000)
 	done := make(chan bool)
+	defer close(done)
 
 	var wg sync.WaitGroup
+	// numWorkers := 1
+	numWorkers := runtime.NumCPU()
 
 	wg.Add(1)
-	go fileReader(&wg, os.Args[1], logentries)
+	go fileReader(&wg, flag.Arg(0), logentries)
 
 	// We do not Add this one
 	// We do not wait for it in the wg
@@ -62,8 +196,8 @@ func main() {
 	// This is required so we can properly close the channel
 	go aggregator(queries, done)
 
-	wg.Add(runtime.NumCPU())
-	for i := 0; i < runtime.NumCPU(); i++ {
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
 		go worker(&wg, logentries, queries)
 	}
 
@@ -76,6 +210,7 @@ func main() {
 	<-done
 }
 
+// lineCouter counts number of lines in file
 func lineCounter(r io.Reader) (int, error) {
 	buf := make([]byte, 32*1024)
 	count := 0
@@ -95,8 +230,11 @@ func lineCounter(r io.Reader) (int, error) {
 	}
 }
 
-func fileReader(wg *sync.WaitGroup, f string, lines chan<- []string) {
+// fileReader reads slow log and adds queries in channel for workers
+func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 	defer wg.Done()
+	defer close(lines)
+
 	file, err := os.Open(f)
 	if err != nil {
 		log.Fatal(err)
@@ -125,142 +263,161 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- []string) {
 	// Skip header line
 	scanner.Scan()
 
-	fmt.Printf("Got version: %s\n", version)
-	fmt.Printf("Got listeners: %s\n", listeners)
+	// Parse server infomation
+	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([a-z0-9-]+)\s+\((.*)\)\. started`)
+	matches := versionre.FindStringSubmatch(version)
+
+	if len(matches) != 5 {
+		log.Warnf("unable to parse server information; beginning of log might be missing")
+		servermeta.Binary = "unable to parse line"
+		servermeta.VersionShort = "unable to parse line"
+		servermeta.Version = "unable to parse line"
+		servermeta.VersionDescription = "unable to parse line"
+		servermeta.TCPPort = 0
+		servermeta.UnixSocket = "unable to parse line"
+	} else {
+		servermeta.Binary = matches[1]
+		servermeta.VersionShort = matches[2]
+		servermeta.Version = servermeta.VersionShort + matches[3]
+		servermeta.VersionDescription = matches[4]
+		servermeta.TCPPort, _ = strconv.Atoi(strings.Split(listeners, " ")[2])
+		servermeta.UnixSocket = strings.Split(listeners, ":")[2]
+	}
 
 	// The entry we'll fill
-	curentry := make([]string, 0, 6)
+	curentry := logentry{}
 
 	// Fetch first "# Time" line
-	// We should loop until found here to be more robust
 	scanner.Scan()
 	line := scanner.Text()
-	curentry = append(curentry, line)
+	for !strings.HasPrefix(line, "# Time") {
+		if !scanner.Scan() {
+			log.Errorf("unable to find initial '# Time' entry")
+			os.Exit(1)
+		}
+		line = scanner.Text()
+	}
+	curentry.lines[0] = line
+
+	var bar *pb.ProgressBar
+
+	// Create progressbar
+	if Config.ShowProgress {
+		bar = pb.New(count)
+		bar.ShowSpeed = true
+		bar.Start()
+	}
 
 	read := 0
-	ticks := count / 10
+	curline := 1
+
 	for scanner.Scan() {
 		line = scanner.Text()
 		read++
-		if read%ticks == 0 {
-			log.Infof("r %d/%d (%d %%)\n", read, count, read*100/count)
+		// log.Debugf("reading line %d: %s", read, line)
+
+		if Config.ShowProgress {
+			bar.Increment()
 		}
 
 		// If we have `# Time`, send current entry and wipe clean
 		if strings.HasPrefix(line, "# Time") {
 			lines <- curentry
-			curentry = make([]string, 0, 6) //curentry[:0]
+			curline = 0
+			for i := range curentry.lines {
+				curentry.lines[i] = ""
+			}
 		}
-		curentry = append(curentry, line)
 
+		curentry.lines[curline] = line
+		curline++
 	}
 
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
 	}
-
-	close(lines)
 }
 
-func worker(wg *sync.WaitGroup, lines <-chan []string, entries chan<- query) {
+// worker reads queries entries from a channel, parses them to create a clean
+// query{} structure, so aggregator can directly extract stats
+func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 	defer wg.Done()
 
 	qry := query{}
 	// var err error
 
 	for lineblock := range lines {
-		for _, line := range lineblock {
-			// fmt.Println(strings.ToUpper(line[0:4]))
+		// fmt.Printf("HERE: %v", lineblock.lines)
+		for _, line := range lineblock.lines {
+			if line == "" {
+				break
+			}
+			// fmt.Printf("LINE: %s\n", line)
 			switch strings.ToUpper(line[0:4]) {
+
 			case "# TI":
 				// # Time: 2018-12-17T15:18:58.744913Z
 				qry.Time, _ = time.Parse(time.RFC3339, strings.Split(line, " ")[2])
+
 			case "# US":
 				// # User@Host: agency[agency] @  [192.168.0.102]  Id: 3502988
 				s := strings.Replace(line, "[", " ", -1)
 				s = strings.Replace(s, "]", " ", -1)
-				fmt.Sscanf(s, "# User@Host: %s %s  @   %s   Id: %d", &qry.AltUser, &qry.User, &qry.Client, &qry.ID)
+				fmt.Sscanf(s, "# User@Host: %s %s  @   %s   Id: %d", &qry.AltUser, &qry.User, &qry.Client, &qry.ConnectionID)
+
 			case "# SC": // "#S"
 				//# Schema: taskl-production  Last_errno: 0  Killed: 0
 				fmt.Sscanf(line, "# Schema: %s  Last_errno: %d  Killed: %d", &qry.Schema, &qry.LastErrno, &qry.Killed)
+
 			case "# QU": // "#Q"
 				// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
 				fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d",
 					&qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+
 			case "# BY":
 				// # Bytes_sent: 561
 				fmt.Sscanf(line, "# Bytes_sent: %d", &qry.BytesSent)
 
-				// qry.BytesSent, err = strconv.Atoi(strings.Split(line, " ")[2])
-				// if err != nil {
-				// 	log.Errorf("Error converting bytes: %v", err)
-				// 	qry.BytesSent = 0
-				// }
 			case "SET ":
 			case "USE ":
 			case "# AD":
 				continue
 			default:
 				qry.FullQuery = line
+
+				// fmt.Printf("# call   : %s - %s\n", qry.FingerPrint, line)
 				fingerprint(&qry)
-				// fmt.Println(line)
 			}
 		}
+		qry.Hash = sha256.Sum256([]byte(qry.FingerPrint))
 		entries <- qry
+		qry = query{}
+
 	}
 	log.Debug("worker exiting")
 }
 
+// fingeprint normalizes queries so they can be aggregated
+// See regexps initialization above
 func fingerprint(qry *query) {
-	//
-	// From pt-query-digest man page
-	//
-	// 1·   Group all SELECT queries from mysqldump together, even if they are against different tables.
-	//      The same applies to all queries from pt-table-checksum.
-	// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
-	// 3·   Strip comments.
-	// 4·   Abstract the databases in USE statements, so all USE statements are grouped together.
-	// 5·   Replace all literals, such as quoted strings.  For efficiency, the code that replaces literal numbers is
-	//      somewhat non-selective, and might replace some things as numbers when they really are not.
-	//      Hexadecimal literals are also replaced.  NULL is treated as a literal.  Numbers embedded in identifiers are
-	//	    also replaced, so tables named similarly will be fingerprinted to the same values
-	//      (e.g. users_2009 and users_2010 will fingerprint identically).
-	// 6·   Collapse all whitespace into a single space.
-	// 7·   Lowercase the entire query.
-	// 8·   Replace all literals inside of IN() and VALUES() lists with a single placeholder, regardless of cardinality.
-	// 9·   Collapse multiple identical UNION queries into a single one.
+	log.Debugf("fingerprint raw query: %s", qry.FullQuery)
 
-	// 1. skipped
-	// 2. shorten inserts
+	// Lowercase query first; this is done by pt-query-digest (step 7)
+	// and speeds up pattern matching by 20% !
+	// (since we do not need to be case insensitive when matching SQL keywords)
+	qry.FingerPrint = strings.ToLower(qry.FullQuery)
 
-	re := regexp.MustCompile(`(?i)(insert .*) values .*`)
-	match := re.FindStringSubmatch(qry.FullQuery)
-	if len(match) == 2 {
-		qry.FingerPrint = match[1]
-		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
+	// Apply all regexps
+	for _, r := range regexeps {
+		qry.FingerPrint = r.Rexp.ReplaceAllString(qry.FingerPrint, r.Repl)
 	}
-
-	// 3. strip comments
-	// C-style naive approach
-	re = regexp.MustCompile(`(.*)/\*.*\*/(.*)`)
-	match = re.FindStringSubmatch(qry.FullQuery)
-	if len(match) == 2 {
-		qry.FingerPrint = match[1]
-		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
-	}
-
-	// SQL style
-	re = regexp.MustCompile(`(.*) --`)
-	match = re.FindStringSubmatch(qry.FullQuery)
-	if len(match) == 2 {
-		qry.FingerPrint = match[1]
-		// fmt.Printf("%q\n", re.FindStringSubmatch(query))
-	}
-
+	log.Debugf("fingerprint normalized query to: %s", qry.FullQuery)
 }
 
 func aggregator(queries <-chan query, done chan<- bool) {
 	log.Info("aggregator started")
+
+	querylist := make(map[[32]byte]*querystats)
 
 	cumbytes := 0
 	countqry := 0
@@ -277,18 +434,82 @@ func aggregator(queries <-chan query, done chan<- bool) {
 			end = qry.Time
 		}
 		//fmt.Printf("user:  %s / %s, time: %s\n", qry.User, qry.AltUser, qry.Time)
+		if _, ok := querylist[qry.Hash]; !ok {
+			querylist[qry.Hash] = &querystats{FingerPrint: qry.FingerPrint}
+		}
+
+		if qry.LastErrno != 0 {
+			querylist[qry.Hash].CumErrored++
+		}
+		querylist[qry.Hash].Count++
+		querylist[qry.Hash].CumKilled += qry.Killed
+		querylist[qry.Hash].CumQueryTime += qry.QueryTime
+		querylist[qry.Hash].CumLockTime += qry.LockTime
+		querylist[qry.Hash].CumRowsSent += qry.RowsSent
+		querylist[qry.Hash].CumRowsExamined += qry.RowsExamined
+		querylist[qry.Hash].CumRowsAffected += qry.RowsAffected
+		querylist[qry.Hash].CumBytesSent += qry.BytesSent
+
+		querylist[qry.Hash].QueryTime = append(querylist[qry.Hash].QueryTime, qry.QueryTime)
+		querylist[qry.Hash].BytesSent = append(querylist[qry.Hash].BytesSent, float64(qry.BytesSent))
+		querylist[qry.Hash].LockTime = append(querylist[qry.Hash].LockTime, qry.LockTime)
+		querylist[qry.Hash].RowsSent = append(querylist[qry.Hash].RowsSent, float64(qry.RowsSent))
+		querylist[qry.Hash].RowsExamined = append(querylist[qry.Hash].RowsExamined, float64(qry.RowsExamined))
+		querylist[qry.Hash].RowsAffected = append(querylist[qry.Hash].RowsAffected, float64(qry.RowsAffected))
 
 	}
 
-	fmt.Printf("Total queries : %.1fM (%d)\n", (float64)(countqry/1e6), countqry)
-	fmt.Printf("Total bytes   : %.1fM (%d)\n", (float64)(cumbytes/1e6), cumbytes)
-	fmt.Printf("Capture start : %s\n", start)
-	fmt.Printf("Capture end   : %s\n", end)
-	fmt.Printf("Duration      : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
-	fmt.Printf("QPS           : %d\n", countqry/int((end.Sub(start)/time.Second)))
+	fmt.Printf("\n# Server Info\n")
+	fmt.Printf("\tBinary             : %s\n", servermeta.Binary)
+	fmt.Printf("\tVersionShort       : %s\n", servermeta.VersionShort)
+	fmt.Printf("\tVersion            : %s\n", servermeta.Version)
+	fmt.Printf("\tVersionDescription : %s\n", servermeta.VersionDescription)
+	fmt.Printf("\tTCPPort            : %d\n", servermeta.TCPPort)
+	fmt.Printf("\tUnixSocket         : %s\n", servermeta.UnixSocket)
+
+	fmt.Printf("\n# Global Statistics\n")
+	fmt.Printf("\tTotal queries      : %8.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
+	fmt.Printf("\tTotal bytes        : %8.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
+	fmt.Printf("\tTotal fingerprints : %d\n", len(querylist))
+	fmt.Printf("\tCapture start      : %s\n", start)
+	fmt.Printf("\tCapture end        : %s\n", end)
+	fmt.Printf("\tDuration           : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
+	fmt.Printf("\tQPS                : %d\n", countqry/int((end.Sub(start)/time.Second)))
+
+	fmt.Printf("\n# Queries\n")
+
+	for key, val := range querylist {
+		val.Concurrency = (val.CumQueryTime * float64(time.Second)) / float64(end.Sub(start))
+		sort.Float64s(val.QueryTime)
+		fmt.Printf("\nQuery: %x\n", key[0:5])
+		fmt.Printf("\tFingerprint     : %s\n", val.FingerPrint)
+		fmt.Printf("\tCalls           : %d\n", val.Count)
+		fmt.Printf("\tCumErrored      : %d\n", val.CumErrored)
+		fmt.Printf("\tCumKilled       : %d\n", val.CumKilled)
+		fmt.Printf("\tCumQueryTime    : %s\n", fsecsToDuration(val.CumQueryTime))
+		fmt.Printf("\tCumLockTime     : %s\n", fsecsToDuration(val.CumLockTime))
+		fmt.Printf("\tCumRowsSent     : %d\n", val.CumRowsSent)
+		fmt.Printf("\tCumRowsExamined : %d\n", val.CumRowsExamined)
+		fmt.Printf("\tCumRowsAffected : %d\n", val.CumRowsAffected)
+		fmt.Printf("\tCumBytesSent    : %d\n", val.CumBytesSent)
+		fmt.Printf("\tConcurrency     : %.2f\n", val.Concurrency)
+		fmt.Printf("\tmin / max time  : %s / %s\n", fsecsToDuration(val.QueryTime[0]), fsecsToDuration(val.QueryTime[len(val.QueryTime)-1]))
+		fmt.Printf("\tmean time       : %s\n", fsecsToDuration(stat.Mean(val.QueryTime, nil)))
+		fmt.Printf("\tp50 time        : %s\n", fsecsToDuration(stat.Quantile(0.5, 1, val.QueryTime, nil)))
+		fmt.Printf("\tp95 time        : %s\n", fsecsToDuration(stat.Quantile(0.95, 1, val.QueryTime, nil)))
+		fmt.Printf("\tstddev time     : %s\n", fsecsToDuration(stat.StdDev(val.QueryTime, nil)))
+		// fmt.Printf("\tmax time        : %.2f\n", stat.Max(0.95, 1, val.QueryTime, nil))
+
+	}
 
 	log.Info("aggregator exiting")
 
 	done <- true
+}
 
+// fsecsToDuration converts float seconds to time.Duration
+// Since we have float64 seconds durations
+// We first convert to µs (* 1e6) then to duration
+func fsecsToDuration(d float64) time.Duration {
+	return time.Duration(d*1e6) * time.Microsecond
 }
