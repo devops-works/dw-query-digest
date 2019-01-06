@@ -22,22 +22,34 @@ all: fmt lint $(BIN) ; $(info $(M) building executable…) @ ## Build program bi
 		-ldflags '-X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' \
 		-o $(BIN)/$(PACKAGE)
 
-static: fmt lint $(BIN) ; $(info $(M) building static executable…) @ ## Build program binary
+static: fmt lint $(BIN) ; $(info $(M) building static executable for Linux……) @ ## Build program binary
 	$Q env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
 		-tags release \
 		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
 		-o $(BIN)/$(PACKAGE)
 
-release: static ; $(info $(M) stripping release executable…) @ ## Build program binary
+darwin: fmt lint $(BIN) ; $(info $(M) building static executable for MacOS…) @ ## Build program binary
+	$Q env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
+		-tags release \
+		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
+		-o $(BIN)/$(PACKAGE)-darwin
+
+windows: fmt lint $(BIN) ; $(info $(M) building static executable for Windoze…) @ ## Build program binary
+	$Q env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
+		-tags release \
+		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
+		-o $(BIN)/$(PACKAGE)-win
+
+release: windows darwin static ; $(info $(M) stripping release executable for Linux…) @ ## Build program binary
 	$Q strip $(BIN)/$(PACKAGE)
+	$Q cp $(BIN)/$(PACKAGE) $(BIN)/$(PACKAGE)-amd64
 	$Q $(BIN)/$(PACKAGE) --version
 
 docker: ; $(info $(M) building docker image…) @ ## Build docker image
 	$Q docker build --build-arg version=$(VERSION) --build-arg builddate=$(DATE) . -t devopsworks/dw-query-digest:$(VERSION)
 
-
-push: ; $(info $(M) pushing docker image…) @ ## Push docker image to dockerhub
-	$Q docker build . -t devopsworks/dw-query-digest:$(VERSION)
+push: docker ; $(info $(M) pushing docker image…) @ ## Push docker image to dockerhub
+	$Q docker push devopsworks/dw-query-digest:$(VERSION)
 
 # Tools
 
