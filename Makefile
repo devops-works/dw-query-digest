@@ -28,8 +28,14 @@ static: fmt lint $(BIN) ; $(info $(M) building static executable…) @ ## Build 
 		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
 		-o $(BIN)/$(PACKAGE)
 
-release: static ; $(info $(M) stripping release executable…) @ ## Build program binary
+release: static docker; $(info $(M) stripping release executable…) @ ## Build program binary
 	$Q strip $(BIN)/$(PACKAGE)
+
+docker: ; $(info $(M) building docker image…) @ ## Build docker image
+	$Q docker build . -t devopsworks/dw-query-digest:$(VERSION)
+
+push: ; $(info $(M) pushing docker image…) @ ## Push docker image to dockerhub
+	$Q docker build . -t devopsworks/dw-query-digest:$(VERSION)
 
 # Tools
 
