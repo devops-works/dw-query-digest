@@ -34,9 +34,12 @@ bin/dw-query-digest  [options] <file>
 
 ## Docker
 
-`cd` where your slow query log is, and:
+To run using [Docker](https://hub.docker.com/r/devopsworks/dw-query-digest):
 
-`docker run -v $(pwd):/data devopsworks/dw-query-digest:v0.2 /data/slow-query.log`
+```bash
+cd where_your_slow_query_log_is
+docker run -v $(pwd):/data devopsworks/dw-query-digest:v0.2 /data/slow-query.log
+```
 
 ## Options
 
