@@ -30,7 +30,6 @@ func TestFingerprint(t *testing.T) {
 		{"SELECT foo, bar FROM table WHERE foo=5 AND bar=`baz`", "select foo, bar from table where foo = ? and bar = ?"},
 		{`SELECT foo, bar FROM table WHERE foo=5 AND bar='baz'`, `select foo, bar from table where foo = ? and bar = ?`},
 		{"UPDATE `something` set `a`=4, `b`=false, `c`='1' WHERE `a`=300662 AND `c`=`2`", "update `something` set `a` = ?, `b` = ?, `c` = ? where `a` = ? and `c` = ?"},
-
 		// 6·   Collapse all whitespace into a single space.
 		{`SELECT  *  FROM  table  `, `select * from table`},
 		// 7·   Lowercase the entire query.
