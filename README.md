@@ -11,8 +11,8 @@ statistics. It can list top queries sorted by specific metrics.
 
 It is reasonably fast and can process ~450k slow-log lines per second.
 
-A 470MB slow query log containing ~10M lines took ~150s with `pt-query-digest`
-and ~23s with `dw-query-digest` (~ 6x faster).
+A 470MB slow query log containing 10M lines took approx 150s with `pt-query-digest`
+and approx 23s with `dw-query-digest` (6x faster).
 
 `dw-query-digest` normalizes SQL queries so identical queries can be aggregated
 in a report.
