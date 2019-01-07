@@ -2,9 +2,9 @@
 
 Alternative to `pt-query-digest`.
 
-[![Build Status](https://travis-ci.org/devops-works/dw-query-digest.svg?branch=master)](https://travis-ci.org/devops-works/dw-query-digest)
+[![Build Status](https://travis-ci.org/devops-works/dw-query-digest.svg?branch=master)](https://travis-ci.org/devops-works/dw-query-digest) [![MIT Licence](https://badges.frapsoft.com/os/mit/mit.svg?v=103)](https://opensource.org/licenses/mit-license.php)
 
-# Purpose
+## Purpose
 
 `dw-query-digest` reads slow query logs files and extracts a number of
 statistics. It can list top queries sorted by specific metrics.
@@ -17,22 +17,22 @@ and approx 23s with `dw-query-digest` (6x faster).
 `dw-query-digest` normalizes SQL queries so identical queries can be aggregated
 in a report.
 
-# Usage
+## Usage
 
-## Binary
+### Binary
 
 `bin/dw-query-digest [options] <file>`
 
-## Source
+### Source
 
 Requires Go 1.11+.
 
-```bash
+```
 make
 bin/dw-query-digest  [options] <file>
 ```
 
-## Docker
+### Docker
 
 To run using [Docker](https://hub.docker.com/r/devopsworks/dw-query-digest):
 
@@ -41,7 +41,7 @@ cd where_your_slow_query_log_is
 docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 ```
 
-## Options
+### Options
 
 - `--debug`: show debugging information; this is very verbose, and meant for debugging
 - `--progress`: display a progress bar
@@ -58,18 +58,18 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 - `--top <int>`: Top queries to display (default 20)
 - `--version`: Show version & exit
 
-# Caveats
+## Caveats
 
 Some corners have been cut regarding query normalization. So YMMV regarding
 aggregations.
 
-# Contributing
+## Contributing
 
 If you spot something missing, or have a slow query log that is not parsed
 correctly, please open an issue and attach the log file.
 
 Comments, criticisms, issues & pull requests welcome.
 
-# Licence
+## Licence
 
 MIT
