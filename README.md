@@ -38,7 +38,7 @@ To run using [Docker](https://hub.docker.com/r/devopsworks/dw-query-digest):
 
 ```bash
 cd where_your_slow_query_log_is
-docker run -v $(pwd):/data devopsworks/dw-query-digest:v0.2 /data/slow-query.log
+docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 ```
 
 ## Options

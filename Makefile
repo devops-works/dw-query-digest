@@ -49,7 +49,9 @@ docker: ; $(info $(M) building docker image…) @ ## Build docker image
 	$Q docker build --build-arg version=$(VERSION) --build-arg builddate=$(DATE) . -t devopsworks/dw-query-digest:$(VERSION)
 
 push: docker ; $(info $(M) pushing docker image…) @ ## Push docker image to dockerhub
+	$Q docker tag devopsworks/dw-query-digest:$(VERSION) devopsworks/dw-query-digest:latest
 	$Q docker push devopsworks/dw-query-digest:$(VERSION)
+	$Q docker push devopsworks/dw-query-digest:latest
 
 # Tools
 
