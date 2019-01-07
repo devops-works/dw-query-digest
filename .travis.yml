@@ -23,6 +23,5 @@ notifications:
 
 script:
   # - golangci-lint run       # run a bunch of code checkers/linters in parallel
-  - go lint
   - go vet
   - go test -v -race ./...  # Run all the tests with the race detector enabled
