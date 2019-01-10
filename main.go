@@ -207,14 +207,10 @@ func main() {
 		log.SetLevel(log.ErrorLevel)
 	}
 
-	// TODO: bind to -q option
 	// log.SetOutput(ioutil.Discard)
 	// trace.Start(os.Stderr)
 	// defer trace.Stop()
 	// defer profile.Start().Stop()
-
-	// TODO: bug with UPDATE `workers` SET `latest_availability_updated_at` = NOW() WHERE `id`=689597;
-	// NOW() is replaced by ?()
 
 	// Create channels
 	// closed by filereader
@@ -316,11 +312,11 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 	if len(matches) != 5 {
 		log.Warnf("unable to parse server information; beginning of log might be missing")
 		servermeta.Binary = "unable to parse line"
-		servermeta.VersionShort = "unable to parse line"
-		servermeta.Version = "unable to parse line"
-		servermeta.VersionDescription = "unable to parse line"
+		servermeta.VersionShort = servermeta.Binary
+		servermeta.Version = servermeta.Binary
+		servermeta.VersionDescription = servermeta.Binary
 		servermeta.TCPPort = 0
-		servermeta.UnixSocket = "unable to parse line"
+		servermeta.UnixSocket = servermeta.Binary
 	} else {
 		servermeta.Binary = matches[1]
 		servermeta.VersionShort = matches[2]
