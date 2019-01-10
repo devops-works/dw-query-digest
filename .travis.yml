@@ -1,4 +1,5 @@
 sudo: false
+dist: trusty
 
 language: go
 
@@ -13,6 +14,10 @@ go:
 git:
   depth: 1
 
+addons:
+  sonarcloud:
+    organization: "devopsworks"
+
 # Skip the install step. Don't `go get` dependencies. Only build with the code
 # in vendor/
 install: true
@@ -25,3 +30,5 @@ script:
   # - golangci-lint run       # run a bunch of code checkers/linters in parallel
   - go vet
   - go test -v -race ./...  # Run all the tests with the race detector enabled
+  - sonar-scanner
+
