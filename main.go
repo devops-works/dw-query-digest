@@ -284,8 +284,12 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 	defer file.Close()
 
 	count, err := lineCounter(file)
-	file.Seek(0, 0)
 
+	if err != nil {
+		panic(err)
+	}
+
+	_, err = file.Seek(0, 0)
 	if err != nil {
 		panic(err)
 	}
