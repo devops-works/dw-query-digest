@@ -29,6 +29,6 @@ notifications:
 script:
   # - golangci-lint run       # run a bunch of code checkers/linters in parallel
   - go vet
-  - go test -v -race ./...  # Run all the tests with the race detector enabled
+  - go test -coverprofile=coverage.out -v -race ./...  # Run all the tests with the race detector enabled
   - sonar-scanner
 
