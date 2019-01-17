@@ -30,9 +30,9 @@ in a report.
 
 Requires Go 1.11+.
 
-```
+```bash
 make
-bin/dw-query-digest  [options] <file>
+bin/dw-query-digest [options] <file>
 ```
 
 ### Docker
@@ -48,6 +48,8 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 
 - `--debug`: show debugging information; this is very verbose, and meant for debugging
 - `--progress`: display a progress bar
+- `--output <fmt>`: produce report using _fmt_ output plugin (default: `terminal`)
+- `--list-outputs`: list possible output plugins
 - `--quiet`: display only the report (no log)
 - `--reverse`: reverse sort (i.e. lowest first)
 - `--sort <string>`: Sort key

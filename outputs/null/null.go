@@ -1,4 +1,4 @@
-package terminal
+package null
 
 import (
 	outputs "github.com/devops-works/dw-query-digest/outputs"
