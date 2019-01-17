@@ -16,10 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"gonum.org/v1/gonum/stat"
 	"gopkg.in/cheggaaa/pb.v1"
 
 	log "github.com/sirupsen/logrus"
+
+	"github.com/devops-works/dw-query-digest/outputs"
+	_ "github.com/devops-works/dw-query-digest/outputs/all"
 )
 
 // logentry holds a complete query entry from log file
@@ -49,30 +51,6 @@ type query struct {
 	Hash         [32]byte
 }
 
-type querystatsSlice []*querystats
-
-// questystats type & methods
-type querystats struct {
-	Hash            [32]byte
-	Count           int
-	FingerPrint     string
-	CumQueryTime    float64
-	CumBytesSent    int
-	CumLockTime     float64
-	CumRowsSent     int
-	CumRowsExamined int
-	CumRowsAffected int
-	CumKilled       int
-	CumErrored      int
-	Concurrency     float64
-	QueryTime       []float64
-	BytesSent       []float64
-	LockTime        []float64
-	RowsSent        []float64
-	RowsExamined    []float64
-	RowsAffected    []float64
-}
-
 // // Len is part of sort.Interface.
 // func (d querystatsSlice) Len() int {
 // 	return len(d)
@@ -88,16 +66,6 @@ type querystats struct {
 // 	return d[i].CumQueryTime < d[j].CumQueryTime
 // }
 
-// serverinfo holds server information gathered from first 2 log lines
-type serverinfo struct {
-	Binary             string
-	VersionShort       string
-	Version            string
-	VersionDescription string
-	TCPPort            int
-	UnixSocket         string
-}
-
 // replacements holds list of regexps we'll apply to queries for normalization
 type replacements struct {
 	Rexp *regexp.Regexp
@@ -112,11 +80,13 @@ type options struct {
 	Top          int
 	SortKey      string
 	SortReverse  bool
+	Output       string
+	ListOutputs  bool
 }
 
 // actual global variables
 var regexeps []replacements
-var servermeta serverinfo
+var servermeta outputs.ServerInfo
 
 // Config holds global
 var Config options
@@ -178,8 +148,8 @@ func init() {
 
 	}
 }
-func main() {
 
+func main() {
 	// var debug = flag.BoolVar(&config."-d", false, "debug mode (very verbose !)")
 	// var quiet = flag.Bool("-q", false, "quiet mode (only reporting)")
 	flag.BoolVar(&Config.ShowProgress, "progress", false, "Display progress bar")
@@ -188,6 +158,8 @@ func main() {
 	flag.IntVar(&Config.Top, "top", 20, "Top queries to display")
 	flag.StringVar(&Config.SortKey, "sort", "time", "Sort key (time (default), count, bytes, lock[time], [rows]sent, [rows]examined, [rows]affected")
 	flag.BoolVar(&Config.SortReverse, "reverse", false, "Reverse sort (lowest first)")
+	flag.StringVar(&Config.Output, "output", "terminal", "Report output (see `--list-outputs` for a list of possible outputs")
+	flag.BoolVar(&Config.ListOutputs, "list-outputs", false, "List possible outputs")
 	var showversion = flag.Bool("version", false, "Show version & exit")
 
 	flag.Parse()
@@ -206,6 +178,22 @@ func main() {
 	if Config.Quiet {
 		log.SetLevel(log.ErrorLevel)
 	}
+
+	if _, ok := outputs.Outputs[Config.Output]; !ok {
+		log.Errorf("unknown output %s; see `--list-outputs`", Config.Output)
+		os.Exit(1)
+	}
+
+	if Config.ListOutputs {
+		fmt.Println("Compiled outputs:")
+
+		for k := range outputs.Outputs {
+			fmt.Printf("\t%s\n", k)
+		}
+		os.Exit(0)
+	}
+
+	log.Infof(`using "%s" output`, Config.Output)
 
 	// log.SetOutput(ioutil.Discard)
 	// trace.Start(os.Stderr)
@@ -387,7 +375,6 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 	defer wg.Done()
 
 	// var err error
-
 	for lineblock := range lines {
 		qry := query{}
 		// fmt.Printf("HERE: %v", lineblock.lines)
@@ -425,6 +412,7 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 			case "USE ":
 			case "# AD":
 				continue
+
 			default:
 				qry.FullQuery = line
 				if qry.FullQuery == "" {
@@ -469,30 +457,31 @@ func fingerprint(qry *query) {
 func aggregator(queries <-chan query, done chan<- bool) {
 	log.Info("aggregator started")
 
-	querylist := make(map[[32]byte]*querystats)
+	querylist := make(map[[32]byte]*outputs.QueryStats)
 
-	cumbytes := 0
-	countqry := 0
-	start := time.Now()
-	end := time.Unix(0, 0)
+	servermeta.CumBytes = 0
+	servermeta.QueryCount = 0
+	servermeta.StartTime = time.Now()
+	servermeta.EndTime = time.Unix(0, 0)
 
 	for qry := range queries {
 		if qry.FingerPrint == "" {
 			log.Errorf("aggregator: got empty fingerprint for %v", qry)
 		}
 
-		countqry++
-		cumbytes += qry.BytesSent
-		if start.After(qry.Time) {
-			start = qry.Time
+		servermeta.QueryCount++
+		servermeta.CumBytes += qry.BytesSent
+		if servermeta.StartTime.After(qry.Time) {
+			servermeta.StartTime = qry.Time
 		}
-		if end.Before(qry.Time) {
-			end = qry.Time
+		if servermeta.EndTime.Before(qry.Time) {
+			servermeta.EndTime = qry.Time
 		}
-		//fmt.Printf("user:  %s / %s, time: %s\n", qry.User, qry.AltUser, qry.Time)
+
 		if _, ok := querylist[qry.Hash]; !ok {
-			// fmt.Printf("FP: %s | HASH: %x\n", qry.FingerPrint, qry.Hash)
-			querylist[qry.Hash] = &querystats{FingerPrint: qry.FingerPrint, Hash: qry.Hash}
+			// New entry, create
+			querylist[qry.Hash] = &outputs.QueryStats{FingerPrint: qry.FingerPrint, Hash: qry.Hash}
+			querylist[qry.Hash].Schema = qry.Schema
 		}
 
 		if qry.LastErrno != 0 {
@@ -517,26 +506,9 @@ func aggregator(queries <-chan query, done chan<- bool) {
 
 	}
 
-	fmt.Printf("\n# Server Info\n\n")
-	fmt.Printf("  Binary             : %s\n", servermeta.Binary)
-	fmt.Printf("  VersionShort       : %s\n", servermeta.VersionShort)
-	fmt.Printf("  Version            : %s\n", servermeta.Version)
-	fmt.Printf("  VersionDescription : %s\n", servermeta.VersionDescription)
-	fmt.Printf("  TCPPort            : %d\n", servermeta.TCPPort)
-	fmt.Printf("  UnixSocket         : %s\n", servermeta.UnixSocket)
+	servermeta.UniqueQueries = len(querylist)
 
-	fmt.Printf("\n# Global Statistics\n\n")
-	fmt.Printf("  Total queries      : %.3fM (%d)\n", float64(countqry)/1000000.0, countqry)
-	fmt.Printf("  Total bytes        : %.3fM (%d)\n", float64(cumbytes)/1000000.0, cumbytes)
-	fmt.Printf("  Total fingerprints : %d\n", len(querylist))
-	fmt.Printf("  Capture start      : %s\n", start)
-	fmt.Printf("  Capture end        : %s\n", end)
-	fmt.Printf("  Duration           : %s (%d s)\n", end.Sub(start), end.Sub(start)/time.Second)
-	fmt.Printf("  QPS                : %.0f\n", float64(time.Second)*(float64(countqry)/float64(end.Sub(start))))
-
-	fmt.Printf("\n# Queries\n")
-
-	s := make(querystatsSlice, 0, len(querylist))
+	s := make(outputs.QueryStatsSlice, 0, len(querylist))
 	for _, d := range querylist {
 		s = append(s, d)
 	}
@@ -585,39 +557,9 @@ func aggregator(queries <-chan query, done chan<- bool) {
 		s = s[:Config.Top]
 	}
 
-	ffactor := 100.0 * float64(time.Second) / float64(end.Sub(start))
-	for idx, val := range s {
-		val.Concurrency = val.CumQueryTime * ffactor
-		sort.Float64s(val.QueryTime)
-		fmt.Printf("\n# Query #%d: %x\n\n", idx+1, val.Hash[0:5])
-		fmt.Printf("  Fingerprint     : %s\n", val.FingerPrint)
-		fmt.Printf("  Calls           : %d\n", val.Count)
-		fmt.Printf("  CumErrored      : %d\n", val.CumErrored)
-		fmt.Printf("  CumKilled       : %d\n", val.CumKilled)
-		fmt.Printf("  CumQueryTime    : %s\n", fsecsToDuration(val.CumQueryTime))
-		fmt.Printf("  CumLockTime     : %s\n", fsecsToDuration(val.CumLockTime))
-		fmt.Printf("  CumRowsSent     : %d\n", val.CumRowsSent)
-		fmt.Printf("  CumRowsExamined : %d\n", val.CumRowsExamined)
-		fmt.Printf("  CumRowsAffected : %d\n", val.CumRowsAffected)
-		fmt.Printf("  CumBytesSent    : %d\n", val.CumBytesSent)
-		fmt.Printf("  Concurrency     : %2.2f%%\n", val.Concurrency)
-		fmt.Printf("  min / max time  : %s / %s\n", fsecsToDuration(val.QueryTime[0]), fsecsToDuration(val.QueryTime[len(val.QueryTime)-1]))
-		fmt.Printf("  mean time       : %s\n", fsecsToDuration(stat.Mean(val.QueryTime, nil)))
-		fmt.Printf("  p50 time        : %s\n", fsecsToDuration(stat.Quantile(0.5, 1, val.QueryTime, nil)))
-		fmt.Printf("  p95 time        : %s\n", fsecsToDuration(stat.Quantile(0.95, 1, val.QueryTime, nil)))
-		fmt.Printf("  stddev time     : %s\n", fsecsToDuration(stat.StdDev(val.QueryTime, nil)))
-		// fmt.Printf("\tmax time        : %.2f\n", stat.Max(0.95, 1, val.QueryTime, nil))
-
-	}
+	outputs.Outputs[Config.Output](servermeta, s)
 
 	log.Info("aggregator exiting")
 
 	done <- true
-}
-
-// fsecsToDuration converts float seconds to time.Duration
-// Since we have float64 seconds durations
-// We first convert to µs (* 1e6) then to duration
-func fsecsToDuration(d float64) time.Duration {
-	return time.Duration(d*1e6) * time.Microsecond
 }
