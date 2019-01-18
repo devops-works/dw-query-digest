@@ -524,20 +524,16 @@ func aggregator(queries <-chan query, done chan<- bool) {
 		case "BYTES":
 			a = float64(s[i].CumBytesSent)
 			b = float64(s[j].CumBytesSent)
-		case "LOCK":
-		case "LOCKTIME":
+		case "LOCK", "LOCKTIME":
 			a = float64(s[i].CumLockTime)
 			b = float64(s[j].CumLockTime)
-		case "ROWSSENT":
-		case "SENT":
+		case "ROWSSENT", "SENT":
 			a = float64(s[i].CumRowsSent)
 			b = float64(s[j].CumRowsSent)
-		case "ROWSEXAMINED":
-		case "EXAMINED":
+		case "ROWSEXAMINED", "EXAMINED":
 			a = float64(s[i].CumRowsExamined)
 			b = float64(s[j].CumRowsExamined)
-		case "ROWSAFFECTED":
-		case "AFFECTED":
+		case "ROWSAFFECTED", "AFFECTED":
 			a = float64(s[i].CumRowsAffected)
 			b = float64(s[j].CumRowsAffected)
 		// case "TIME":
