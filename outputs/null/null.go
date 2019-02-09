@@ -7,7 +7,8 @@ import (
 )
 
 // Display show report in the terminal
-func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writer) {
+func Display(outputs.ServerInfo, outputs.QueryStatsSlice, io.Writer) {
+	// This is empty since we do not have to do anything
 }
 
 func init() {

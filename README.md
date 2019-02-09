@@ -70,8 +70,7 @@ The default output is "terminal".
 
 ### `terminal`
 
-Simple terminal output, designed to be read by humans. The ultimate goal is to
-reproduce exactly `pt-query-digest` output.
+Simple terminal output, designed to be read by humans.
 
 ### `greppable`
 
@@ -111,7 +110,7 @@ benchmarking, to prime cache, and whatnot.
 
 When run against a file, `dw-query-digest` will try to find a cache file having the same name and ending with `.cache`. For instance, if you invoke:
 
-```
+```bash
 dw-query-digest -top 1 dbfoo-slow.log
 ```
 
@@ -141,6 +140,14 @@ If you spot something missing, or have a slow query log that is not parsed
 correctly, please open an issue and attach the log file.
 
 Comments, criticisms, issues & pull requests welcome.
+
+## Roadmap
+
+- [ ] cache
+- [ ] `tail -f` reading (disable linecount !) with periodic reporting (in a TUI ?)
+- [ ] `web` live output
+- [ ] `pt-query-digest` output ?
+- [ ] UDP json streamed output (no stats) for filebeat/logstash/graylog ?
 
 ## Licence
 

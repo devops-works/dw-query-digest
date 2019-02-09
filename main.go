@@ -200,19 +200,15 @@ func main() {
 
 	Config.FileName = flag.Arg(0)
 
-	// TODO: check that file exists
-
 	log.Infof(`using "%s" as input file`, Config.FileName)
 	log.Infof(`using "%s" output`, Config.Output)
 
 	// If cache is not disabled
 	// Try to display from cache
 	// If it succeeds, we've done our job
-	if !Config.DisableCache {
-		if displayFromCache(flag.Arg(0)) {
-			log.Info(`results rerieved from cache`)
-			os.Exit(0)
-		}
+	if !Config.DisableCache && displayFromCache(flag.Arg(0)) {
+		log.Info(`results rerieved from cache`)
+		os.Exit(0)
 	}
 
 	// log.SetOutput(ioutil.Discard)
