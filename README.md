@@ -48,7 +48,7 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 
 - `--debug`: show debugging information; this is very verbose, and meant for debugging
 - `--progress`: display a progress bar
-- `--output <fmt>`: produce report using _fmt_ output plugin (default: `terminal`)
+- `--output <fmt>`: produce report using _fmt_ output plugin (default: `terminal`; see "Outputs" below)
 - `--list-outputs`: list possible output plugins
 - `--quiet`: display only the report (no log)
 - `--reverse`: reverse sort (i.e. lowest first)
@@ -64,6 +64,49 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 - `--nocache`: Disables cache (writing & reading)
 - `--version`: Show version & exit
 
+## Outputs
+
+The default output is "terminal".
+
+### `terminal`
+
+Simple terminal output, designed to be read by humans. The ultimate goal is to
+reproduce exactly `pt-query-digest` output.
+
+### `greppable`
+
+CSV format output designed to be used in combination with `grep`.
+In this format, the two first lines are:
+
+- meta information (server version, duration, etc...)
+- columns header
+
+Both lines start with `#`, so if you only want queries, you can filter them
+using `dw-query-digest ... | grep -v '^#'`.
+
+Column headers are prefixed by a number. You can directly use this number with
+`cut` if you only need a specific column. For instance, if I just want the max
+time for a query, and since the column header is `16_Max(s)`, I can use:
+
+```bash
+$ dw-query-digest ... | grep -v '^#' | cut -f16 -d';'
+2.378111
+0.243685
+0.335063
+0.715469
+```
+
+### `json`
+
+Pretty-printed JSON output containing general information in the `meta` key and
+queries informations in the `stats` key. Note that the keys layout are subject
+to change.
+
+### `null`
+
+Does not output anything, everything goes to `/dev/null`. This can be used for
+benchmarking, to prime cache, and whatnot.
+
 ## Cache
 
 When run against a file, `dw-query-digest` will try to find a cache file having the same name and ending with `.cache`. For instance, if you invoke:
@@ -78,12 +121,14 @@ cache. This lets you rerun the command if needed without having to re-analyze
 the whole original file.
 
 Since all results are cached, you can use different paramaters. For instance,
-`--top` or `--sort` can be different and will (hopefully) work.
+`--top`, `--sort` or `output` can be different and will (hopefully) work.
 
 If you don't want to read or write from/to the cache at all, you can use the
 ``--nocache` option. You can also remove the file anytime.
 
 If the analyzed file is newer than it's cache, the cache will not be used.
+
+Cache format is not guaranteed to work between different versions.
 
 ## Caveats
 
