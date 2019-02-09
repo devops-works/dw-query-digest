@@ -3,4 +3,5 @@
 *.log
 *.ptqd
 *.out
+*.cache
 dw-query-digest

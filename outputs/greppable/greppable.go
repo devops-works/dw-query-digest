@@ -2,6 +2,7 @@ package greppable
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 // Display show report in the terminal
-func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice) {
+func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writer) {
 	fmt.Printf("# Binary:%s;", servermeta.Binary)
 	fmt.Printf("VersionShort:%s;", servermeta.VersionShort)
 	fmt.Printf("Version:%s;", servermeta.Version)

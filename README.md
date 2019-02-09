@@ -61,7 +61,29 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
   - `[rows]examined`: sort by rows examined
   - `[rows]affected`: sort by rows affected
 - `--top <int>`: Top queries to display (default 20)
+- `--nocache`: Disables cache (writing & reading)
 - `--version`: Show version & exit
+
+## Cache
+
+When run against a file, `dw-query-digest` will try to find a cache file having the same name and ending with `.cache`. For instance, if you invoke:
+
+```
+dw-query-digest -top 1 dbfoo-slow.log
+```
+
+then `dw-query-digest` will try to find `dbfoo-slow.log.cache`. If the cache
+file is found, the original file is not touched and results are read from the
+cache. This lets you rerun the command if needed without having to re-analyze
+the whole original file.
+
+Since all results are cached, you can use different paramaters. For instance,
+`--top` or `--sort` can be different and will (hopefully) work.
+
+If you don't want to read or write from/to the cache at all, you can use the
+``--nocache` option. You can also remove the file anytime.
+
+If the analyzed file is newer than it's cache, the cache will not be used.
 
 ## Caveats
 

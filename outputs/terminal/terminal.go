@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 )
 
 // Display show report in the terminal
-func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice) {
+func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writer) {
 	fmt.Printf("\n# Server Info\n\n")
 	fmt.Printf("  Binary             : %s\n", servermeta.Binary)
 	fmt.Printf("  VersionShort       : %s\n", servermeta.VersionShort)

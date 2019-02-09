@@ -4,9 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"os"
 	"regexp"
 	"runtime"
@@ -82,6 +84,8 @@ type options struct {
 	SortReverse  bool
 	Output       string
 	ListOutputs  bool
+	DisableCache bool
+	FileName     string
 }
 
 // actual global variables
@@ -160,6 +164,7 @@ func main() {
 	flag.BoolVar(&Config.SortReverse, "reverse", false, "Reverse sort (lowest first)")
 	flag.StringVar(&Config.Output, "output", "terminal", "Report output (see `--list-outputs` for a list of possible outputs")
 	flag.BoolVar(&Config.ListOutputs, "list-outputs", false, "List possible outputs")
+	flag.BoolVar(&Config.DisableCache, "nocache", false, "Disable cache usage (reading from and writing to)")
 	var showversion = flag.Bool("version", false, "Show version & exit")
 
 	flag.Parse()
@@ -193,7 +198,22 @@ func main() {
 		os.Exit(0)
 	}
 
+	Config.FileName = flag.Arg(0)
+
+	// TODO: check that file exists
+
+	log.Infof(`using "%s" as input file`, Config.FileName)
 	log.Infof(`using "%s" output`, Config.Output)
+
+	// If cache is not disabled
+	// Try to display from cache
+	// If it succeeds, we've done our job
+	if !Config.DisableCache {
+		if displayFromCache(flag.Arg(0)) {
+			log.Info(`results rerieved from cache`)
+			os.Exit(0)
+		}
+	}
 
 	// log.SetOutput(ioutil.Discard)
 	// trace.Start(os.Stderr)
@@ -214,7 +234,7 @@ func main() {
 	numWorkers := runtime.NumCPU()
 
 	wg.Add(1)
-	go fileReader(&wg, flag.Arg(0), logentries)
+	go fileReader(&wg, Config.FileName, logentries)
 
 	// We do not Add this one
 	// We do not wait for it in the wg
@@ -510,6 +530,7 @@ func aggregator(queries <-chan query, done chan<- bool) {
 
 	s := make(outputs.QueryStatsSlice, 0, len(querylist))
 	for _, d := range querylist {
+		// TODO: make all the crappy calculations here so we do not have to repeat them in every output
 		s = append(s, d)
 	}
 
@@ -548,14 +569,81 @@ func aggregator(queries <-chan query, done chan<- bool) {
 		return a > b
 	})
 
+	// Save before trimming query list so we can change `top` in next runs
+	// Implement json & cache here
+	// If cache is not disabled, open file ".file.cache" and pass an io.Writer
+	// If cache is disable, just skip cache writing
+	if !Config.DisableCache {
+		cachefile := Config.FileName + ".cache"
+		w, err := os.Create(cachefile)
+		if err != nil {
+			log.Fatalf("unable to write to cache file %s: %v", cachefile, err)
+		}
+		log.Infof("caching results in %s", cachefile)
+		defer w.Close()
+		//outputs.Outputs["null"](servermeta, s, w)
+		outputs.Outputs["json"](servermeta, s, w)
+	}
+
 	// Keep top queries
 	if len(s) > Config.Top {
 		s = s[:Config.Top]
 	}
 
-	outputs.Outputs[Config.Output](servermeta, s)
-
+	outputs.Outputs[Config.Output](servermeta, s, os.Stdout)
 	log.Info("aggregator exiting")
 
 	done <- true
+}
+
+func displayFromCache(file string) bool {
+	cachefile := file + ".cache"
+
+	fi, err := os.Stat(file)
+	if err != nil {
+		log.Errorf("unable to get file information for %s: %v", file, err)
+		return false
+	}
+
+	fc, err := os.Stat(cachefile)
+	if err != nil {
+		log.Errorf("cachefile %s not found: %v", file, err)
+		return false
+	}
+
+	// If file is more recent than cache
+	// return immediately
+	if fi.ModTime().After(fc.ModTime()) {
+		log.Infof("skipping stale cache")
+		return false
+	}
+
+	// Open our jsonFile
+	cache, err := os.Open(cachefile)
+
+	if err != nil {
+		log.Errorf("unable to open cache file %s: %v", cachefile, err)
+		return false
+	}
+
+	defer cache.Close()
+
+	filecontent, _ := ioutil.ReadAll(cache)
+
+	entries := outputs.CacheInfo{}
+
+	// we unmarshal our byteArray which contains our
+	// jsonFile's content into 'users' which we defined above
+	err = json.Unmarshal(filecontent, &entries)
+	if err != nil {
+		log.Errorf("unable to read cache: %v", err)
+		return false
+	}
+
+	if len(entries.Queries) > Config.Top {
+		entries.Queries = entries.Queries[:Config.Top]
+	}
+
+	outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
+	return true
 }
