@@ -313,7 +313,7 @@ func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
 	// Skip header line
 	scanner.Scan()
 
-	// Parse server infomation
+	// Parse server information
 	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([a-z0-9-]+)\s+\((.*)\)\. started`)
 	matches := versionre.FindStringSubmatch(version)
 
