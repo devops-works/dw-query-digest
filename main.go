@@ -410,17 +410,12 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	for scanner.Scan() {
 		line = scanner.Text()
 		read++
-		// log.Debugf("reading line %d: %s", read, line)
-
 		if Config.ShowProgress {
 			bar.Increment()
 		}
 
 		// If we have `# Time`, send current entry and wipe clean and go on
 		if strings.HasPrefix(line, "# Time") {
-			for i, l := range curentry.lines {
-				log.Printf("shipping line %d/%d: %s", i, len(curentry.lines), l)
-			}
 			lines <- curentry
 			curline = -1
 			for i := range curentry.lines {
@@ -436,15 +431,10 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 				curentry.lines[curline] = strings.Join([]string{curentry.lines[curline], line}, " ")
 			} else {
 				curline++
-				// log.Printf("at %d adding %s\n", curline, line)
-
 				curentry.lines[curline] = line
 			}
 
 			foldnext = false
-			// log.Printf("curline is %d\n", curline)
-			// log.Printf("len(curentry.lines[curline])-1 is %d\n", len(curentry.lines[curline])-1)
-			// log.Printf("curentry.lines[curline] is %s\n", curentry.lines[curline])
 			firstchar := curentry.lines[curline][:1]
 			lastchar := curentry.lines[curline][len(curentry.lines[curline])-1:]
 
@@ -458,9 +448,6 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	}
 
 	// Ship the last curentry
-	for i, l := range curentry.lines {
-		log.Printf("shipping last entry %d/%d: %s", i, len(curentry.lines), l)
-	}
 	lines <- curentry
 
 	if err := scanner.Err(); err != nil {
