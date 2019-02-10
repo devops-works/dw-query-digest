@@ -52,6 +52,7 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 - `--list-outputs`: list possible output plugins
 - `--quiet`: display only the report (no log)
 - `--reverse`: reverse sort (i.e. lowest first)
+- `--follow`: follow log file (`tail -F` style)
 - `--sort <string>`: Sort key
   - `time` (default): sort by cumulative execution time
   - `count`: sort by query count
@@ -129,6 +130,11 @@ If the analyzed file is newer than it's cache, the cache will not be used.
 
 Cache format is not guaranteed to work between different versions.
 
+## Continuous reading
+
+There is an *alpha* support for ever growing files when `--follow` is set. It
+should support file rotation & truncation.
+
 ## Caveats
 
 Some corners have been cut regarding query normalization. So YMMV regarding
@@ -143,8 +149,8 @@ Comments, criticisms, issues & pull requests welcome.
 
 ## Roadmap
 
-- [ ] cache
-- [ ] `tail -f` reading (disable linecount !) with periodic reporting (in a TUI ?)
+- [x] cache
+- [x] `tail -f` reading (disable linecount !) with periodic reporting (in a TUI ?)
 - [ ] `web` live output
 - [ ] `pt-query-digest` output ?
 - [ ] UDP json streamed output (no stats) for filebeat/logstash/graylog ?

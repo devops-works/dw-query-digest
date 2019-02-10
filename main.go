@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	// "github.com/hpcloud/tail"
+	"github.com/hpcloud/tail"
 	"gopkg.in/cheggaaa/pb.v1"
 	"io"
 	"io/ioutil"
@@ -205,8 +205,10 @@ func main() {
 
 	// File selection
 	var (
-		file *os.File
-		err  error
+		file  *os.File
+		piper *io.PipeReader
+		pipew *io.PipeWriter
+		err   error
 	)
 	Config.FileName = flag.Arg(0)
 
@@ -216,8 +218,29 @@ func main() {
 		Config.Follow = true
 		Config.ShowProgress = false
 		file = os.Stdin
-		// } else if Config.Follow {
-		// file, err = tail.TailFile(Config.FileName, tail.Config{Follow: true, ReOpen: true})
+	} else if Config.Follow {
+		log.Info(`follow enabled`)
+		Config.ShowProgress = false
+
+		piper, pipew = io.Pipe()
+
+		go func(*io.PipeWriter) {
+			// file, err =
+			defer pipew.Close()
+			t, err := tail.TailFile(Config.FileName,
+				tail.Config{Follow: true, ReOpen: true,
+					Logger:   log.StandardLogger(),
+					Location: &tail.SeekInfo{Offset: 0, Whence: 0}})
+			if err != nil {
+				log.Fatalf(`error setting up tail goroutine: %v`, err)
+			}
+			for line := range t.Lines {
+				_, err := io.Copy(pipew, strings.NewReader(line.Text+"\n"))
+				if err != nil {
+					log.Fatalf(`error copying from tailfile to pipe: %v`, err)
+				}
+			}
+		}(pipew)
 	} else {
 		log.Infof(`using "%s" as input file`, Config.FileName)
 		file, err = os.Open(Config.FileName)
@@ -256,7 +279,24 @@ func main() {
 	numWorkers := runtime.NumCPU()
 
 	wg.Add(1)
-	go fileReader(&wg, file, logentries)
+
+	if Config.Follow {
+		go fileReader(&wg, piper, logentries, 0)
+	} else {
+		count, err := lineCounter(file)
+		if err != nil {
+			panic(err)
+		}
+
+		_, err = file.Seek(0, 0)
+		if err != nil {
+			panic(err)
+		}
+
+		log.Infof("file has %d lines\n", count)
+
+		go fileReader(&wg, file, logentries, count)
+	}
 
 	// We do not Add this one
 	// We do not wait for it in the wg
@@ -299,28 +339,9 @@ func lineCounter(r io.Reader) (int, error) {
 }
 
 // fileReader reads slow log and adds queries in channel for workers
-func fileReader(wg *sync.WaitGroup, r io.ReadSeeker, lines chan<- logentry) {
+func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count int) {
 	defer wg.Done()
 	defer close(lines)
-
-	var (
-		count int
-		err   error
-	)
-
-	if !Config.Follow {
-		count, err = lineCounter(r)
-		if err != nil {
-			panic(err)
-		}
-
-		_, err = r.Seek(0, 0)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	log.Infof("file has %d lines\n", count)
 
 	scanner := bufio.NewScanner(r)
 
@@ -508,15 +529,22 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 	var ticker *time.Ticker
 
-	// Here we check delay so we avoid starting with 0
-	// which creates panic & mayhem
-	// But the logic is ugly
-	// Find another way ?
+	// The ticker is here for periodic redisplay
+	// Since ticker channel is required in select
+	// it is required event if it is not used.
+	// To handle this, we have to create a sync.Once function
+	// for closing so we do not close twice when refresh is not required
+	var tickerstoponce sync.Once
+	tickerStop := func() {
+		ticker.Stop()
+	}
+
 	if tickerdelay > 0 {
 		ticker = time.NewTicker(tickerdelay)
 	} else {
 		ticker = time.NewTicker(10000 * time.Millisecond)
-		ticker.Stop()
+		tickerstoponce.Do(tickerStop)
+		fmt.Printf("ticker channel: %v", ticker.C)
 	}
 
 	for {
@@ -527,10 +555,11 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 		case qry, ok := <-queries:
 			if !ok {
-				ticker.Stop()
+				tickerstoponce.Do(tickerStop)
 				displayReport(querylist, true)
 				log.Info("aggregator exiting")
 				done <- true
+				return
 			}
 
 			servermeta.QueryCount++
