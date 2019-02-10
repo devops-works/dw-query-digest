@@ -526,15 +526,22 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 	var ticker *time.Ticker
 
-	// Here we check delay so we avoid starting with 0
-	// which creates panic & mayhem
-	// But the logic is ugly
-	// Find another way ?
+	// The ticker is here for periodic redisplay
+	// Since ticker channel is required in select
+	// it is required event if it is not used.
+	// To handle this, we have to create a sync.Once function
+	// for closing so we do not close twice when refresh is not required
+	var tickerstoponce sync.Once
+	tickerStop := func() {
+		ticker.Stop()
+	}
+
 	if tickerdelay > 0 {
 		ticker = time.NewTicker(tickerdelay)
 	} else {
 		ticker = time.NewTicker(10000 * time.Millisecond)
-		ticker.Stop()
+		tickerstoponce.Do(tickerStop)
+		fmt.Printf("ticker channel: %v", ticker.C)
 	}
 
 	for {
@@ -545,10 +552,11 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 		case qry, ok := <-queries:
 			if !ok {
-				ticker.Stop()
+				tickerstoponce.Do(tickerStop)
 				displayReport(querylist, true)
 				log.Info("aggregator exiting")
 				done <- true
+				return
 			}
 
 			servermeta.QueryCount++
