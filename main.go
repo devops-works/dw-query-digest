@@ -235,7 +235,10 @@ func main() {
 				log.Fatalf(`error setting up tail goroutine: %v`, err)
 			}
 			for line := range t.Lines {
-				io.Copy(pipew, strings.NewReader(line.Text+"\n"))
+				_, err := io.Copy(pipew, strings.NewReader(line.Text+"\n"))
+				if err != nil {
+					log.Fatalf(`error copying from tailfile to pipe: %v`, err)
+				}
 			}
 		}(pipew)
 	} else {
