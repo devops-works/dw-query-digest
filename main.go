@@ -127,7 +127,7 @@ func init() {
 		// 1·   Group all SELECT queries from mysqldump together
 		// ... not implemented ...
 		// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
-		{regexp.MustCompile(`(insert .*) values .*`), "$1 values (?)"},
+		{regexp.MustCompile(`(insert .*) values.*`), "$1 values (?)"},
 		// 3·   Strip comments.
 		{regexp.MustCompile(`(.*)/\*.*\*/(.*)`), "$1$2"},
 		{regexp.MustCompile(`(.*) --.*`), "$1"},
@@ -344,6 +344,8 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	defer close(lines)
 
 	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
 
 	// Read version
 	scanner.Scan()
@@ -423,8 +425,19 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			}
 		}
 
-		curentry.lines[curline] = line
-		curline++
+		// We check that line number is below capacity
+		if curline < cap(curentry.lines) {
+			// Now if line does not end with a ';', this is a multiline query
+			// So we append to previous entry in slice
+			if curentry.lines[curline][len(curentry.lines[curline])-1:] == ";" {
+				curentry.lines[curline] = line
+				curline++
+			} else {
+				curentry.lines[curline-1] = strings.Join([]string{curentry.lines[curline-1], line}, " ")
+			}
+		} else {
+			log.Warningf(`got request to add element %d for line "%s"`, curline, line)
+		}
 	}
 
 	if err := scanner.Err(); err != nil {
