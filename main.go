@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	// "github.com/hpcloud/tail"
+	"gopkg.in/cheggaaa/pb.v1"
 	"io"
 	"io/ioutil"
 	"os"
@@ -17,8 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"gopkg.in/cheggaaa/pb.v1"
 
 	log "github.com/sirupsen/logrus"
 
@@ -86,6 +86,8 @@ type options struct {
 	ListOutputs  bool
 	DisableCache bool
 	FileName     string
+	Follow       bool
+	Refresh      int
 }
 
 // actual global variables
@@ -160,11 +162,14 @@ func main() {
 	flag.BoolVar(&Config.Debug, "debug", false, "Show debugging information (verbose !)")
 	flag.BoolVar(&Config.Quiet, "quiet", false, "Display only the report")
 	flag.IntVar(&Config.Top, "top", 20, "Top queries to display")
+	flag.IntVar(&Config.Refresh, "refresh", 0, "How often to refresh display (ms)")
 	flag.StringVar(&Config.SortKey, "sort", "time", "Sort key (time (default), count, bytes, lock[time], [rows]sent, [rows]examined, [rows]affected")
 	flag.BoolVar(&Config.SortReverse, "reverse", false, "Reverse sort (lowest first)")
 	flag.StringVar(&Config.Output, "output", "terminal", "Report output (see `--list-outputs` for a list of possible outputs")
 	flag.BoolVar(&Config.ListOutputs, "list-outputs", false, "List possible outputs")
 	flag.BoolVar(&Config.DisableCache, "nocache", false, "Disable cache usage (reading from and writing to)")
+	flag.BoolVar(&Config.Follow, "follow", false, "Follow file as it grows (tail -F style)")
+
 	var showversion = flag.Bool("version", false, "Show version & exit")
 
 	flag.Parse()
@@ -198,15 +203,36 @@ func main() {
 		os.Exit(0)
 	}
 
+	// File selection
+	var (
+		file *os.File
+		err  error
+	)
 	Config.FileName = flag.Arg(0)
 
-	log.Infof(`using "%s" as input file`, Config.FileName)
+	if Config.FileName == "" || Config.FileName == "-" {
+		log.Info(`reading from STDIN`)
+		Config.FileName = ""
+		Config.Follow = true
+		Config.ShowProgress = false
+		file = os.Stdin
+		// } else if Config.Follow {
+		// file, err = tail.TailFile(Config.FileName, tail.Config{Follow: true, ReOpen: true})
+	} else {
+		log.Infof(`using "%s" as input file`, Config.FileName)
+		file, err = os.Open(Config.FileName)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer file.Close()
+	}
+
 	log.Infof(`using "%s" output`, Config.Output)
 
-	// If cache is not disabled
+	// If cache is not disabled and we're are not tailing input
 	// Try to display from cache
 	// If it succeeds, we've done our job
-	if !Config.DisableCache && runFromCache(flag.Arg(0)) {
+	if !Config.DisableCache && !Config.Follow && runFromCache(flag.Arg(0)) {
 		log.Info(`results rerieved from cache`)
 		os.Exit(0)
 	}
@@ -230,13 +256,13 @@ func main() {
 	numWorkers := runtime.NumCPU()
 
 	wg.Add(1)
-	go fileReader(&wg, Config.FileName, logentries)
+	go fileReader(&wg, file, logentries)
 
 	// We do not Add this one
 	// We do not wait for it in the wg
 	// but using <-done
 	// This is required so we can properly close the channel
-	go aggregator(queries, done)
+	go aggregator(queries, done, time.Duration(Config.Refresh)*time.Millisecond)
 
 	wg.Add(numWorkers)
 	for i := 0; i < numWorkers; i++ {
@@ -273,30 +299,30 @@ func lineCounter(r io.Reader) (int, error) {
 }
 
 // fileReader reads slow log and adds queries in channel for workers
-func fileReader(wg *sync.WaitGroup, f string, lines chan<- logentry) {
+func fileReader(wg *sync.WaitGroup, r io.ReadSeeker, lines chan<- logentry) {
 	defer wg.Done()
 	defer close(lines)
 
-	file, err := os.Open(f)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
+	var (
+		count int
+		err   error
+	)
 
-	count, err := lineCounter(file)
+	if !Config.Follow {
+		count, err = lineCounter(r)
+		if err != nil {
+			panic(err)
+		}
 
-	if err != nil {
-		panic(err)
-	}
-
-	_, err = file.Seek(0, 0)
-	if err != nil {
-		panic(err)
+		_, err = r.Seek(0, 0)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	log.Infof("file has %d lines\n", count)
 
-	scanner := bufio.NewScanner(file)
+	scanner := bufio.NewScanner(r)
 
 	// Read version
 	scanner.Scan()
@@ -470,7 +496,7 @@ func fingerprint(qry *query) {
 	log.Debugf("fingerprint normalized query to: %s", qry.FingerPrint)
 }
 
-func aggregator(queries <-chan query, done chan<- bool) {
+func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duration) {
 	log.Info("aggregator started")
 
 	querylist := make(map[[32]byte]*outputs.QueryStats)
@@ -480,7 +506,18 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	servermeta.StartTime = time.Now()
 	servermeta.EndTime = time.Unix(0, 0)
 
-	ticker := time.NewTicker(500 * time.Millisecond)
+	var ticker *time.Ticker
+
+	// Here we check delay so we avoid starting with 0
+	// which creates panic & mayhem
+	// But the logic is ugly
+	// Find another way ?
+	if tickerdelay > 0 {
+		ticker = time.NewTicker(tickerdelay)
+	} else {
+		ticker = time.NewTicker(10000 * time.Millisecond)
+		ticker.Stop()
+	}
 
 	for {
 		select {

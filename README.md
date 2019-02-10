@@ -47,7 +47,7 @@ docker run -v $(pwd):/data devopsworks/dw-query-digest /data/slow-query.log
 ### Options
 
 - `--debug`: show debugging information; this is very verbose, and meant for debugging
-- `--progress`: display a progress bar
+- `--progress`: display a progress bar (disabled when reading from STDIN or using `--follow`)
 - `--output <fmt>`: produce report using _fmt_ output plugin (default: `terminal`; see "Outputs" below)
 - `--list-outputs`: list possible output plugins
 - `--quiet`: display only the report (no log)
