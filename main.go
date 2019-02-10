@@ -404,7 +404,8 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	}
 
 	read := 0
-	curline := 1
+	curline := 0
+	foldnext := false
 
 	for scanner.Scan() {
 		line = scanner.Text()
@@ -415,11 +416,13 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			bar.Increment()
 		}
 
-		// If we have `# Time`, send current entry and wipe clean
+		// If we have `# Time`, send current entry and wipe clean and go on
 		if strings.HasPrefix(line, "# Time") {
-			curentry.pos = read
+			for i, l := range curentry.lines {
+				log.Printf("shipping line %d/%d: %s", i, len(curentry.lines), l)
+			}
 			lines <- curentry
-			curline = 0
+			curline = -1
 			for i := range curentry.lines {
 				curentry.lines[i] = ""
 			}
@@ -429,16 +432,36 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 		if curline < cap(curentry.lines) {
 			// Now if line does not end with a ';', this is a multiline query
 			// So we append to previous entry in slice
-			if curentry.lines[curline][len(curentry.lines[curline])-1:] == ";" {
-				curentry.lines[curline] = line
-				curline++
+			if foldnext {
+				curentry.lines[curline] = strings.Join([]string{curentry.lines[curline], line}, " ")
 			} else {
-				curentry.lines[curline-1] = strings.Join([]string{curentry.lines[curline-1], line}, " ")
+				curline++
+				// log.Printf("at %d adding %s\n", curline, line)
+
+				curentry.lines[curline] = line
+			}
+
+			foldnext = false
+			// log.Printf("curline is %d\n", curline)
+			// log.Printf("len(curentry.lines[curline])-1 is %d\n", len(curentry.lines[curline])-1)
+			// log.Printf("curentry.lines[curline] is %s\n", curentry.lines[curline])
+			firstchar := curentry.lines[curline][:1]
+			lastchar := curentry.lines[curline][len(curentry.lines[curline])-1:]
+
+			if lastchar != ";" && firstchar != "#" {
+				log.Printf("next line will fold\n")
+				foldnext = true
 			}
 		} else {
 			log.Warningf(`got request to add element %d for line "%s"`, curline, line)
 		}
 	}
+
+	// Ship the last curentry
+	for i, l := range curentry.lines {
+		log.Printf("shipping last entry %d/%d: %s", i, len(curentry.lines), l)
+	}
+	lines <- curentry
 
 	if err := scanner.Err(); err != nil {
 		log.Fatal(err)
