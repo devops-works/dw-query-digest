@@ -206,7 +206,7 @@ func main() {
 	// If cache is not disabled
 	// Try to display from cache
 	// If it succeeds, we've done our job
-	if !Config.DisableCache && displayFromCache(flag.Arg(0)) {
+	if !Config.DisableCache && runFromCache(flag.Arg(0)) {
 		log.Info(`results rerieved from cache`)
 		os.Exit(0)
 	}
@@ -480,48 +480,62 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	servermeta.StartTime = time.Now()
 	servermeta.EndTime = time.Unix(0, 0)
 
-	for qry := range queries {
-		if qry.FingerPrint == "" {
-			log.Errorf("aggregator: got empty fingerprint for %v", qry)
+	ticker := time.NewTicker(500 * time.Millisecond)
+
+	for {
+		select {
+
+		case <-ticker.C:
+			displayReport(querylist, false)
+
+		case qry, ok := <-queries:
+			if !ok {
+				ticker.Stop()
+				displayReport(querylist, true)
+				log.Info("aggregator exiting")
+				done <- true
+			}
+
+			servermeta.QueryCount++
+			servermeta.CumBytes += qry.BytesSent
+			if servermeta.StartTime.After(qry.Time) {
+				servermeta.StartTime = qry.Time
+			}
+			if servermeta.EndTime.Before(qry.Time) {
+				servermeta.EndTime = qry.Time
+			}
+
+			if _, ok := querylist[qry.Hash]; !ok {
+				// New entry, create
+				querylist[qry.Hash] = &outputs.QueryStats{FingerPrint: qry.FingerPrint, Hash: qry.Hash}
+				querylist[qry.Hash].Schema = qry.Schema
+			}
+
+			if qry.LastErrno != 0 {
+				querylist[qry.Hash].CumErrored++
+			}
+
+			querylist[qry.Hash].Count++
+			querylist[qry.Hash].CumKilled += qry.Killed
+			querylist[qry.Hash].CumQueryTime += qry.QueryTime
+			querylist[qry.Hash].CumLockTime += qry.LockTime
+			querylist[qry.Hash].CumRowsSent += qry.RowsSent
+			querylist[qry.Hash].CumRowsExamined += qry.RowsExamined
+			querylist[qry.Hash].CumRowsAffected += qry.RowsAffected
+			querylist[qry.Hash].CumBytesSent += qry.BytesSent
+
+			querylist[qry.Hash].QueryTime = append(querylist[qry.Hash].QueryTime, qry.QueryTime)
+			querylist[qry.Hash].BytesSent = append(querylist[qry.Hash].BytesSent, float64(qry.BytesSent))
+			querylist[qry.Hash].LockTime = append(querylist[qry.Hash].LockTime, qry.LockTime)
+			querylist[qry.Hash].RowsSent = append(querylist[qry.Hash].RowsSent, float64(qry.RowsSent))
+			querylist[qry.Hash].RowsExamined = append(querylist[qry.Hash].RowsExamined, float64(qry.RowsExamined))
+			querylist[qry.Hash].RowsAffected = append(querylist[qry.Hash].RowsAffected, float64(qry.RowsAffected))
 		}
-
-		servermeta.QueryCount++
-		servermeta.CumBytes += qry.BytesSent
-		if servermeta.StartTime.After(qry.Time) {
-			servermeta.StartTime = qry.Time
-		}
-		if servermeta.EndTime.Before(qry.Time) {
-			servermeta.EndTime = qry.Time
-		}
-
-		if _, ok := querylist[qry.Hash]; !ok {
-			// New entry, create
-			querylist[qry.Hash] = &outputs.QueryStats{FingerPrint: qry.FingerPrint, Hash: qry.Hash}
-			querylist[qry.Hash].Schema = qry.Schema
-		}
-
-		if qry.LastErrno != 0 {
-			querylist[qry.Hash].CumErrored++
-		}
-
-		querylist[qry.Hash].Count++
-		querylist[qry.Hash].CumKilled += qry.Killed
-		querylist[qry.Hash].CumQueryTime += qry.QueryTime
-		querylist[qry.Hash].CumLockTime += qry.LockTime
-		querylist[qry.Hash].CumRowsSent += qry.RowsSent
-		querylist[qry.Hash].CumRowsExamined += qry.RowsExamined
-		querylist[qry.Hash].CumRowsAffected += qry.RowsAffected
-		querylist[qry.Hash].CumBytesSent += qry.BytesSent
-
-		querylist[qry.Hash].QueryTime = append(querylist[qry.Hash].QueryTime, qry.QueryTime)
-		querylist[qry.Hash].BytesSent = append(querylist[qry.Hash].BytesSent, float64(qry.BytesSent))
-		querylist[qry.Hash].LockTime = append(querylist[qry.Hash].LockTime, qry.LockTime)
-		querylist[qry.Hash].RowsSent = append(querylist[qry.Hash].RowsSent, float64(qry.RowsSent))
-		querylist[qry.Hash].RowsExamined = append(querylist[qry.Hash].RowsExamined, float64(qry.RowsExamined))
-		querylist[qry.Hash].RowsAffected = append(querylist[qry.Hash].RowsAffected, float64(qry.RowsAffected))
-
 	}
+}
 
+// displayReport show a report given the select output
+func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
 	servermeta.UniqueQueries = len(querylist)
 
 	s := make(outputs.QueryStatsSlice, 0, len(querylist))
@@ -569,7 +583,7 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	// Implement json & cache here
 	// If cache is not disabled, open file ".file.cache" and pass an io.Writer
 	// If cache is disable, just skip cache writing
-	if !Config.DisableCache {
+	if !Config.DisableCache && final {
 		cachefile := Config.FileName + ".cache"
 		w, err := os.Create(cachefile)
 		if err != nil {
@@ -587,12 +601,9 @@ func aggregator(queries <-chan query, done chan<- bool) {
 	}
 
 	outputs.Outputs[Config.Output](servermeta, s, os.Stdout)
-	log.Info("aggregator exiting")
-
-	done <- true
 }
 
-func displayFromCache(file string) bool {
+func runFromCache(file string) bool {
 	cachefile := file + ".cache"
 
 	fi, err := os.Stat(file)
