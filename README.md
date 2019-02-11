@@ -133,7 +133,71 @@ Cache format is not guaranteed to work between different versions.
 ## Continuous reading
 
 There is an *alpha* support for ever growing files when `--follow` is set. It
-should support file rotation & truncation.
+should support file rotation & truncation too.
+
+### Testing continuous reading
+
+Assuming you have docker and `dw-query-digest` in your PATH, you can quickly
+test continuous reading like so:
+
+```bash
+# Prepare log dir & database
+mkdir test
+chmod 777 test
+docker run --name mysql-test \
+    -p 3307:3306 \
+    -v $(pwd)/test/:/log \
+    -e MYSQL_ALLOW_EMPTY_PASSWORD=true \
+    -d mysql:5.7.19 \
+    --slow-query-log=ON \
+    --slow-query-log-file=/log/slow.log \
+    --long-query-time=0
+
+docker exec -ti mysql-test mysqladmin create test || echo 'Unable to create database; mysql not ready ?'
+docker exec -ti mysql-test mysql -e 'create user sbtest;' || echo 'Unable to create user; mysql not ready ?'
+docker exec -ti mysql-test mysql -e 'grant all privileges on *.* to sbtest@`%`;'|| echo 'Unable to grant user; mysql not ready ?'
+docker exec -ti mysql-test mysql -e 'grant all on *.* to root@`%`;' || echo 'Unable to grant root; mysql not ready ?'
+docker exec -ti mysql-test mysql -e 'flush privileges;'
+docker exec -ti mysql-test mysql -e 'set global slow_query_log="ON";'
+
+# Run this in another terminal
+./bin/dw-query-digest -top 10 -refresh 1000 --follow test/slow.log
+
+# Then back to previous terminal
+docker run \
+--rm=true \
+--name=sb-prepare \
+--link mysql-test:mysql \
+severalnines/sysbench \
+sysbench \
+--db-driver=mysql --table-size=1000000 --mysql-db=test \
+--mysql-user=sbtest --mysql-port=3306 --mysql-host=mysql \
+oltp_read_write prepare
+
+docker run \
+--rm=true \
+--name=sb-run \
+--link mysql-test:mysql \
+severalnines/sysbench \
+sysbench \
+--db-driver=mysql --table-size=1000000 --mysql-db=test \
+--mysql-user=sbtest --mysql-port=3306 --mysql-host=mysql \
+--max-requests=0 --threads=8 --time=60 \
+oltp_read_write run
+
+# Clean all the things when done
+docker run \
+--rm=true \
+--name=sb-run \
+--link mysql-test:mysql \
+severalnines/sysbench \
+sysbench \
+--db-driver=mysql --table-size=1000000 --mysql-db=test \
+--mysql-user=sbtest --mysql-port=3306 --mysql-host=mysql \
+oltp_read_write cleanup
+
+docker stop mysql-test && docker rm mysql-test
+```
 
 ## Caveats
 
@@ -151,6 +215,7 @@ Comments, criticisms, issues & pull requests welcome.
 
 - [x] cache
 - [x] `tail -f` reading (disable linecount !) with periodic reporting (in a TUI ?)
+- [ ] internal statistics (logs lines/s, queries/s, ...)
 - [ ] `web` live output
 - [ ] `pt-query-digest` output ?
 - [ ] UDP json streamed output (no stats) for filebeat/logstash/graylog ?
