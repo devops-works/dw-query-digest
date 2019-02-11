@@ -161,7 +161,7 @@ docker exec -ti mysql-test mysql -e 'flush privileges;'
 docker exec -ti mysql-test mysql -e 'set global slow_query_log="ON";'
 
 # Run this in another terminal
-./bin/dw-query-digest -top 10 -refresh 1000 --follow test/slow.log
+dw-query-digest -top 10 -refresh 1000 --follow test/slow.log
 
 # Then back to previous terminal
 docker run \
