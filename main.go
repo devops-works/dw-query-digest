@@ -423,6 +423,12 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			}
 		}
 
+		// Skip duplicated header
+		firstword := strings.Split(line, " ")[0]
+		if firstword == "mysqld," || firstword == "Tcp" || firstword == "Time" {
+			continue
+		}
+
 		// We check that line number is below capacity
 		if curline < cap(curentry.lines) {
 			// Now if line does not end with a ';', this is a multiline query
@@ -439,11 +445,11 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			lastchar := curentry.lines[curline][len(curentry.lines[curline])-1:]
 
 			if lastchar != ";" && firstchar != "#" {
-				log.Printf("next line will fold\n")
+				log.Debugf("line (%d) will fold after %s\n", read+1, firstword)
 				foldnext = true
 			}
 		} else {
-			log.Warningf(`got request to add element %d for line "%s"`, curline, line)
+			log.Warningf(`request to add element %d for line "%s" exceeds capacity`, curline, line)
 		}
 	}
 
