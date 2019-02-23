@@ -5,3 +5,4 @@
 *.out
 *.cache
 dw-query-digest
+/test/coverage*

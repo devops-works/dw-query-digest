@@ -338,15 +338,7 @@ func lineCounter(r io.Reader) (int, error) {
 	}
 }
 
-// fileReader reads slow log and adds queries in channel for workers
-func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count int) {
-	defer wg.Done()
-	defer close(lines)
-
-	scanner := bufio.NewScanner(r)
-	buf := make([]byte, 0, 64*1024)
-	scanner.Buffer(buf, 1024*1024)
-
+func parseHeader(scanner *bufio.Scanner, meta *outputs.ServerInfo) error {
 	// Read version
 	scanner.Scan()
 	version := scanner.Text()
@@ -363,20 +355,37 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	matches := versionre.FindStringSubmatch(version)
 
 	if len(matches) != 5 {
-		log.Warnf("unable to parse server information; beginning of log might be missing")
-		servermeta.Binary = "unable to parse line"
-		servermeta.VersionShort = servermeta.Binary
-		servermeta.Version = servermeta.Binary
-		servermeta.VersionDescription = servermeta.Binary
-		servermeta.TCPPort = 0
-		servermeta.UnixSocket = servermeta.Binary
-	} else {
-		servermeta.Binary = matches[1]
-		servermeta.VersionShort = matches[2]
-		servermeta.Version = servermeta.VersionShort + matches[3]
-		servermeta.VersionDescription = matches[4]
-		servermeta.TCPPort, _ = strconv.Atoi(strings.Split(listeners, " ")[2])
-		servermeta.UnixSocket = strings.TrimLeft(strings.Split(listeners, ":")[2], " ")
+		meta.Binary = "unable to parse line"
+		meta.VersionShort = meta.Binary
+		meta.Version = meta.Binary
+		meta.VersionDescription = meta.Binary
+		meta.TCPPort = 0
+		meta.UnixSocket = meta.Binary
+		return fmt.Errorf("unable to parse server information; beginning of log might be missing")
+	}
+
+	meta.Binary = matches[1]
+	meta.VersionShort = matches[2]
+	meta.Version = meta.VersionShort + matches[3]
+	meta.VersionDescription = matches[4]
+	meta.TCPPort, _ = strconv.Atoi(strings.Split(listeners, " ")[2])
+	meta.UnixSocket = strings.TrimLeft(strings.Split(listeners, ":")[2], " ")
+
+	return nil
+}
+
+// fileReader reads slow log and adds queries in channel for workers
+func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count int) {
+	defer wg.Done()
+	defer close(lines)
+
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+
+	err := parseHeader(scanner, &servermeta)
+	if err != nil {
+		log.Errorf("error reading log header: %v", err)
 	}
 
 	// The entry we'll fill
@@ -573,7 +582,7 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 	} else {
 		ticker = time.NewTicker(10000 * time.Millisecond)
 		tickerstoponce.Do(tickerStop)
-		fmt.Printf("ticker channel: %v", ticker.C)
+		// fmt.Printf("ticker channel: %v", ticker.C)
 	}
 
 	for {
