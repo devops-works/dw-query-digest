@@ -21,18 +21,26 @@ func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writ
 	fmt.Fprintf(w, "  TCPPort            : %d\n", servermeta.TCPPort)
 	fmt.Fprintf(w, "  UnixSocket         : %s\n", servermeta.UnixSocket)
 
+	fmt.Fprintf(w, "\n# Internal Analyzer Statistics\n\n")
+	// fmt.Fprintf(w, "  Start     : %s\n", servermeta.AnalysisStart)
+	fmt.Fprintf(w, "  Duration  : %14.3fs\n", servermeta.AnalysisDuration)
+	fmt.Fprintf(w, "  Log lines : %14.3fM (%d)\n", float64(servermeta.CumLines)/1000000.0, servermeta.CumLines)
+	fmt.Fprintf(w, "  Lines/s   : %14.3f\n", servermeta.AnalysedLinesPerSecond)
+	fmt.Fprintf(w, "  Bytes/s   : %14.3f\n", servermeta.AnalysedBytesPerSecond)
+	fmt.Fprintf(w, "  Queries/s : %14.3f\n", servermeta.AnalysedQueriesPerSecond)
+
 	fmt.Fprintf(w, "\n# Global Statistics\n\n")
 	fmt.Fprintf(w, "  Total queries      : %.3fM (%d)\n", float64(servermeta.QueryCount)/1000000.0, servermeta.QueryCount)
 	fmt.Fprintf(w, "  Total bytes        : %.3fM (%d)\n", float64(servermeta.CumBytes)/1000000.0, servermeta.CumBytes)
 	fmt.Fprintf(w, "  Total fingerprints : %d\n", servermeta.UniqueQueries)
-	fmt.Fprintf(w, "  Capture start      : %s\n", servermeta.StartTime)
-	fmt.Fprintf(w, "  Capture end        : %s\n", servermeta.EndTime)
-	fmt.Fprintf(w, "  Duration           : %s (%d s)\n", servermeta.EndTime.Sub(servermeta.StartTime), servermeta.EndTime.Sub(servermeta.StartTime)/time.Second)
-	fmt.Fprintf(w, "  QPS                : %.0f\n", float64(time.Second)*(float64(servermeta.QueryCount)/float64(servermeta.EndTime.Sub(servermeta.StartTime))))
+	fmt.Fprintf(w, "  Capture start      : %s\n", servermeta.Start)
+	fmt.Fprintf(w, "  Capture end        : %s\n", servermeta.End)
+	fmt.Fprintf(w, "  Duration           : %s (%d s)\n", servermeta.End.Sub(servermeta.Start), servermeta.End.Sub(servermeta.Start)/time.Second)
+	fmt.Fprintf(w, "  QPS                : %.0f\n", float64(time.Second)*(float64(servermeta.QueryCount)/float64(servermeta.End.Sub(servermeta.Start))))
 
 	fmt.Fprintf(w, "\n# Queries\n")
 
-	ffactor := 100.0 * float64(time.Second) / float64(servermeta.EndTime.Sub(servermeta.StartTime))
+	ffactor := 100.0 * float64(time.Second) / float64(servermeta.End.Sub(servermeta.Start))
 	for idx, val := range s {
 		val.Concurrency = val.CumQueryTime * ffactor
 		sort.Float64s(val.QueryTime)

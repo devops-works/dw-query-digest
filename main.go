@@ -126,11 +126,11 @@ func init() {
 	regexeps = []replacements{
 		// 1·   Group all SELECT queries from mysqldump together
 		// ... not implemented ...
-		// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
-		{regexp.MustCompile(`(insert .*) values.*`), "$1 values (?)"},
 		// 3·   Strip comments.
 		{regexp.MustCompile(`(.*)/\*.*\*/(.*)`), "$1$2"},
 		{regexp.MustCompile(`(.*) --.*`), "$1"},
+		// 2·   Shorten multi-value INSERT statements to a single VALUES() list.
+		{regexp.MustCompile(`^(insert .*) values.*`), "$1 values (?)"},
 		// 4·   Abstract the databases in USE statements
 		// ... not implemented ... since I don't really get it
 		// 5·   Sort of...
@@ -215,12 +215,14 @@ func main() {
 	if Config.FileName == "" || Config.FileName == "-" {
 		log.Info(`reading from STDIN`)
 		Config.FileName = ""
+		Config.DisableCache = true
 		Config.Follow = true
 		Config.ShowProgress = false
 		file = os.Stdin
 	} else if Config.Follow {
 		log.Info(`follow enabled`)
 		Config.ShowProgress = false
+		Config.DisableCache = true
 
 		piper, pipew = io.Pipe()
 
@@ -255,8 +257,8 @@ func main() {
 	// If cache is not disabled and we're are not tailing input
 	// Try to display from cache
 	// If it succeeds, we've done our job
-	if !Config.DisableCache && !Config.Follow && runFromCache(flag.Arg(0)) {
-		log.Info(`results rerieved from cache`)
+	if !Config.DisableCache && runFromCache(flag.Arg(0)) {
+		log.Info(`results retrieved from cache`)
 		os.Exit(0)
 	}
 
@@ -280,7 +282,9 @@ func main() {
 
 	wg.Add(1)
 
-	if Config.Follow {
+	if Config.FileName == "" {
+		go fileReader(&wg, file, logentries, 0)
+	} else if Config.Follow {
 		go fileReader(&wg, piper, logentries, 0)
 	} else {
 		count, err := lineCounter(file)
@@ -293,10 +297,13 @@ func main() {
 			panic(err)
 		}
 
+		servermeta.CumLines = count
 		log.Infof("file has %d lines\n", count)
 
 		go fileReader(&wg, file, logentries, count)
 	}
+
+	servermeta.AnalysisStart = time.Now()
 
 	// We do not Add this one
 	// We do not wait for it in the wg
@@ -478,12 +485,11 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 	// var err error
 	for lineblock := range lines {
 		qry := query{}
-		// fmt.Printf("HERE: %v", lineblock.lines)
 		for _, line := range lineblock.lines {
 			if line == "" {
 				break
 			}
-			// fmt.Printf("LINE: %s\n", line)
+
 			switch strings.ToUpper(line[0:4]) {
 
 			case "# TI":
@@ -562,8 +568,8 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 	servermeta.CumBytes = 0
 	servermeta.QueryCount = 0
-	servermeta.StartTime = time.Now()
-	servermeta.EndTime = time.Unix(0, 0)
+	servermeta.Start = time.Now()
+	servermeta.End = time.Unix(0, 0)
 
 	var ticker *time.Ticker
 
@@ -602,11 +608,11 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 			servermeta.QueryCount++
 			servermeta.CumBytes += qry.BytesSent
-			if servermeta.StartTime.After(qry.Time) {
-				servermeta.StartTime = qry.Time
+			if servermeta.Start.After(qry.Time) {
+				servermeta.Start = qry.Time
 			}
-			if servermeta.EndTime.Before(qry.Time) {
-				servermeta.EndTime = qry.Time
+			if servermeta.End.Before(qry.Time) {
+				servermeta.End = qry.Time
 			}
 
 			if _, ok := querylist[qry.Hash]; !ok {
@@ -641,6 +647,11 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 // displayReport show a report given the select output
 func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
 	servermeta.UniqueQueries = len(querylist)
+	servermeta.AnalysisEnd = time.Now()
+	servermeta.AnalysisDuration = servermeta.AnalysisEnd.Sub(servermeta.AnalysisStart).Seconds()
+	servermeta.AnalysedLinesPerSecond = float64(servermeta.CumLines) / servermeta.AnalysisDuration
+	servermeta.AnalysedBytesPerSecond = float64(servermeta.CumBytes) / servermeta.AnalysisDuration
+	servermeta.AnalysedQueriesPerSecond = float64(servermeta.QueryCount) / servermeta.AnalysisDuration
 
 	s := make(outputs.QueryStatsSlice, 0, len(querylist))
 	for _, d := range querylist {

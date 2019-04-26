@@ -22,17 +22,17 @@ func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writ
 	fmt.Fprintf(w, "Total queries:%.3fM (%d);", float64(servermeta.QueryCount)/1000000.0, servermeta.QueryCount)
 	fmt.Fprintf(w, "Total bytes:%.3fM (%d);", float64(servermeta.CumBytes)/1000000.0, servermeta.CumBytes)
 	fmt.Fprintf(w, "Total fingerprints:%d;", servermeta.UniqueQueries)
-	fmt.Fprintf(w, "Capture start:%s;", servermeta.StartTime)
-	fmt.Fprintf(w, "Capture end:%s;", servermeta.EndTime)
-	fmt.Fprintf(w, "Duration:%s (%d s);", servermeta.EndTime.Sub(servermeta.StartTime), servermeta.EndTime.Sub(servermeta.StartTime)/time.Second)
-	fmt.Fprintf(w, "QPS:%.0f\n", float64(time.Second)*(float64(servermeta.QueryCount)/float64(servermeta.EndTime.Sub(servermeta.StartTime))))
+	fmt.Fprintf(w, "Capture start:%s;", servermeta.Start)
+	fmt.Fprintf(w, "Capture end:%s;", servermeta.End)
+	fmt.Fprintf(w, "Duration:%s (%d s);", servermeta.End.Sub(servermeta.Start), servermeta.End.Sub(servermeta.Start)/time.Second)
+	fmt.Fprintf(w, "QPS:%.0f\n", float64(time.Second)*(float64(servermeta.QueryCount)/float64(servermeta.End.Sub(servermeta.Start))))
 
 	fmt.Fprintf(w, "# 1_Pos;2_QueryID;3_Fingerprint;4_Schema;5_Calls;")
 	fmt.Fprintf(w, "6_CumErrored;7_CumKilled;8_CumQueryTime(s);9_CumLockTime(s);10_CumRowsSent;")
 	fmt.Fprintf(w, "11_CumRowsExamined;12_CumRowsAffected;13_CumBytesSent;14_Concurency(%%);15_Min(s);16_Max(s);")
 	fmt.Fprintf(w, "17_Mean(s);18_P50(s);19_P95(s);20_StdDev(s)\n")
 
-	ffactor := 100.0 * float64(time.Second) / float64(servermeta.EndTime.Sub(servermeta.StartTime))
+	ffactor := 100.0 * float64(time.Second) / float64(servermeta.End.Sub(servermeta.Start))
 	for idx, val := range s {
 		val.Concurrency = val.CumQueryTime * ffactor
 		sort.Float64s(val.QueryTime)

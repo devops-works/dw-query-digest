@@ -5,6 +5,7 @@ Alternative to `pt-query-digest`.
 [![Build Status](https://travis-ci.org/devops-works/dw-query-digest.svg?branch=master)](https://travis-ci.org/devops-works/dw-query-digest)
 [![Go Report Card](https://goreportcard.com/badge/github.com/devops-works/dw-query-digest)](https://goreportcard.com/report/github.com/devops-works/dw-query-digest)
 [![SonarQube](https://sonarcloud.io/api/project_badges/measure?project=dw-query-digest&metric=alert_status)](https://sonarcloud.io/dashboard?id=dw-query-digest)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=dw-query-digest&metric=coverage)](https://sonarcloud.io/dashboard?id=dw-query-digest)
 [![MIT Licence](https://badges.frapsoft.com/os/mit/mit.svg?v=103)](https://opensource.org/licenses/mit-license.php)
 
 ## Purpose

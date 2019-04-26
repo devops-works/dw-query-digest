@@ -7,17 +7,24 @@ import (
 
 // ServerInfo holds server information gathered from first 2 log lines
 type ServerInfo struct {
-	Binary             string    `json:"binary"`
-	VersionShort       string    `json:"versionShort"`
-	Version            string    `json:"version"`
-	VersionDescription string    `json:"versionDescription"`
-	TCPPort            int       `json:"tcpPort"`
-	UnixSocket         string    `json:"unixSocket"`
-	CumBytes           int       `json:"cumBytes"`
-	QueryCount         int       `json:"queryCount"`
-	UniqueQueries      int       `json:"uniqueQueries"`
-	StartTime          time.Time `json:"startTime"`
-	EndTime            time.Time `json:"endTime"`
+	Binary                   string    `json:"binary"`
+	VersionShort             string    `json:"versionShort"`
+	Version                  string    `json:"version"`
+	VersionDescription       string    `json:"versionDescription"`
+	TCPPort                  int       `json:"tcpPort"`
+	UnixSocket               string    `json:"unixSocket"`
+	CumBytes                 int       `json:"cumBytes"`
+	CumLines                 int       `json:"cumLines"`
+	QueryCount               int       `json:"queryCount"`
+	UniqueQueries            int       `json:"uniqueQueries"`
+	Start                    time.Time `json:"Start"`
+	End                      time.Time `json:"End"`
+	AnalysisStart            time.Time `json:"analysisStart"`
+	AnalysisEnd              time.Time `json:"analysisEnd"`
+	AnalysedLinesPerSecond   float64   `json:"analysedLinesPerSecond"`
+	AnalysedQueriesPerSecond float64   `json:"analysedQueriesPerSecond"`
+	AnalysedBytesPerSecond   float64   `json:"analysedBytesPerSecond"`
+	AnalysisDuration         float64   `json:"analysisDuration"`
 	// May be merge querystats here with:
 	// Queries []QueryStats ?
 }
