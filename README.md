@@ -25,11 +25,13 @@ in a report.
 
 ### Binary
 
+Grab binary releases on [GitHub](https://github.com/devops-works/dw-query-digest/releases).
+
 `bin/dw-query-digest [options] <file>`
 
 ### Source
 
-Requires Go 1.11+.
+Requires Go 1.12+.
 
 ```bash
 make
@@ -110,7 +112,8 @@ benchmarking, to prime cache, and whatnot.
 
 ## Cache
 
-When run against a file, `dw-query-digest` will try to find a cache file having the same name and ending with `.cache`. For instance, if you invoke:
+When run against a file, `dw-query-digest` will try to find a cache file having
+the same name and ending with `.cache`. For instance, if you invoke:
 
 ```bash
 dw-query-digest -top 1 dbfoo-slow.log
@@ -216,7 +219,7 @@ Comments, criticisms, issues & pull requests welcome.
 
 - [x] cache
 - [x] `tail -f` reading (disable linecount !) with periodic reporting (in a TUI ?)
-- [ ] internal statistics (logs lines/s, queries/s, ...)
+- [x] internal statistics (logs lines/s, queries/s, ...)
 - [ ] `web` live output
 - [ ] `pt-query-digest` output ?
 - [ ] UDP json streamed output (no stats) for filebeat/logstash/graylog ?
