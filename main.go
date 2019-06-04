@@ -358,7 +358,7 @@ func parseHeader(scanner *bufio.Scanner, meta *outputs.ServerInfo) error {
 	scanner.Scan()
 
 	// Parse server information
-	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([a-z0-9-]+)\s+\((.*)\)\. started`)
+	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([A-Za-z0-9-]+)\s+\((.*)\)\. started`)
 	matches := versionre.FindStringSubmatch(version)
 
 	if len(matches) != 5 {
