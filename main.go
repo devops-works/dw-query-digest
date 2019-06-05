@@ -33,6 +33,7 @@ type logentry struct {
 }
 
 // query holds a single query with metrics
+// FIXME: Do some stats with QCHit
 type query struct {
 	Time         time.Time
 	User         string
@@ -41,6 +42,7 @@ type query struct {
 	ConnectionID int
 	Schema       string
 	LastErrno    int
+	QCHit        bool
 	Killed       int
 	QueryTime    float64
 	LockTime     float64
@@ -52,21 +54,6 @@ type query struct {
 	FingerPrint  string
 	Hash         [32]byte
 }
-
-// // Len is part of sort.Interface.
-// func (d querystatsSlice) Len() int {
-// 	return len(d)
-// }
-
-// // Swap is part of sort.Interface.
-// func (d querystatsSlice) Swap(i, j int) {
-// 	d[i], d[j] = d[j], d[i]
-// }
-
-// // Less is part of sort.Interface. We use count as the value to sort by
-// func (d querystatsSlice) Less(i, j int) bool {
-// 	return d[i].CumQueryTime < d[j].CumQueryTime
-// }
 
 // replacements holds list of regexps we'll apply to queries for normalization
 type replacements struct {
@@ -440,19 +427,23 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 		}
 
 		// Skip duplicated header
+		// FIXME: this does not match "/usr/libexec/mysqld" (cf https://github.com/devops-works/dw-query-digest/issues/3)
 		firstword := strings.Split(line, " ")[0]
 		if firstword == "mysqld," || firstword == "Tcp" || firstword == "Time" {
 			continue
 		}
 
-		// We check that line number is below capacity
-		if curline < cap(curentry.lines) {
+		// We check that line number is below capacity minus one
+		// Why minus one ? because we increment curline and use it as an index
+		// inside this if
+		if curline < cap(curentry.lines)-1 {
 			// Now if line does not end with a ';', this is a multiline query
 			// So we append to previous entry in slice
 			if foldnext {
 				curentry.lines[curline] = strings.Join([]string{curentry.lines[curline], line}, " ")
 			} else {
 				curline++
+				log.Debugf("curline is %d, len is %d, cap is %d)\n", curline, len(curentry.lines), cap(curentry.lines))
 				curentry.lines[curline] = line
 			}
 
@@ -482,7 +473,9 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 	defer wg.Done()
 
-	// var err error
+	var err error
+	var smallbuf string
+
 	for lineblock := range lines {
 		qry := query{}
 		for _, line := range lineblock.lines {
@@ -494,7 +487,16 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 
 			case "# TI":
 				// # Time: 2018-12-17T15:18:58.744913Z
-				qry.Time, _ = time.Parse(time.RFC3339, strings.Split(line, " ")[2])
+				// or
+				// # Time: 190603 23:14:02 // in mariadb
+				qry.Time, err = time.Parse(time.RFC3339, strings.Split(line, " ")[2])
+				if err != nil {
+					datetime := strings.Join(strings.Split(line, " ")[2:], " ")
+					qry.Time, err = time.Parse("060102 15:04:05", datetime)
+					if err != nil {
+						log.Errorf("worker: error parsing time '%s': %v", datetime, err)
+					}
+				}
 
 			case "# US":
 				// # User@Host: agency[agency] @  [192.168.0.102]  Id: 3502988
@@ -505,6 +507,13 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 			case "# SC": // "#S"
 				//# Schema: taskl-production  Last_errno: 0  Killed: 0
 				fmt.Sscanf(line, "# Schema: %s  Last_errno: %d  Killed: %d", &qry.Schema, &qry.LastErrno, &qry.Killed)
+
+			case "# TH": // "#S"
+				//# Thread_id: 3  Schema: thedb  QC_hit: No
+				fmt.Sscanf(line, "# Thread_id: %d Schema: %s QC_hit: %s", &qry.Schema, &qry.LastErrno, &smallbuf)
+				if smallbuf != "No" {
+					qry.QCHit = true
+				}
 
 			case "# QU": // "#Q"
 				// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
