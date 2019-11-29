@@ -7,8 +7,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/hpcloud/tail"
-	"gopkg.in/cheggaaa/pb.v1"
 	"io"
 	"io/ioutil"
 	"os"
@@ -24,6 +22,8 @@ import (
 
 	"github.com/devops-works/dw-query-digest/outputs"
 	_ "github.com/devops-works/dw-query-digest/outputs/all"
+	"github.com/nxadm/tail"
+	"gopkg.in/cheggaaa/pb.v1"
 )
 
 // logentry holds a complete query entry from log file
