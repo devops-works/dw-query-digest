@@ -1,5 +1,6 @@
 /.vscode
 /bin
+/on
 *.log
 *.ptqd
 *.out
