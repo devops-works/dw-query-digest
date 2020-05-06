@@ -1,6 +1,9 @@
 ---
 image: golang:1.14
 
+variables:
+  GOCACHE: "off"
+
 stages:
   - test
   - build
