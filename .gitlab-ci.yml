@@ -1,8 +1,12 @@
 ---
 image: golang:1.14
 
+cache:
+  paths:
+    - .cache
+
 variables:
-  GOCACHE: "off"
+  GOPATH: "$CI_PROJECT_DIR/.cache"
 
 stages:
   - test
