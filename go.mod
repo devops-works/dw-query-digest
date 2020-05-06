@@ -8,8 +8,8 @@ require (
 	github.com/nxadm/tail v1.4.4
 	github.com/sirupsen/logrus v1.2.0
 	github.com/stretchr/testify v1.2.2
-	golang.org/x/crypto v0.0.0-20181203042331-505ab145d0a9 // indirect
 	golang.org/x/exp v0.0.0-20181112044915-a3060d491354 // indirect
+	golang.org/x/lint v0.0.0-20200302205851-738671d3881b // indirect
 	golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e // indirect
 	gonum.org/v1/gonum v0.0.0-20190105094335-1fc0fba783fc
 	gonum.org/v1/netlib v0.0.0-20181224185128-3431cf544c75 // indirect
