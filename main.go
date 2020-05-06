@@ -785,6 +785,6 @@ func runFromCache(file string) bool {
 		entries.Queries = entries.Queries[:Config.Top]
 	}
 
-	displayReport(entries.Queries, true)
+	outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
 	return true
 }
