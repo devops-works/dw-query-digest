@@ -22,7 +22,7 @@ in a report.
 
 ### Binary
 
-Grab binary releases on [GitHub](https://gitlab.com/devopsworks/tools/dw-query-digest/releases).
+Grab binary releases on [Gitlab](https://gitlab.com/devopsworks/tools/dw-query-digest/-/releases).
 
 `bin/dw-query-digest [options] <file>`
 
