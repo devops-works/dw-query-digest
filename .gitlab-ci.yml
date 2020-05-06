@@ -7,7 +7,6 @@ cache:
 
 variables:
   GOPATH: "$CI_PROJECT_DIR/.cache"
-  GOCACHE: "$CI_PROJECT_DIR/.gocache"
 
 stages:
   - test
