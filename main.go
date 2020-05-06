@@ -482,6 +482,10 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				break
 			}
 
+			if len(line) < 5 {
+				log.Warnf("unable to parse line preamble for '%s'; skipping", line)
+				continue
+			}
 			switch strings.ToUpper(line[0:4]) {
 
 			case "# TI":
@@ -490,10 +494,15 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				// # Time: 190603 23:14:02 // in mariadb
 				qry.Time, err = time.Parse(time.RFC3339, strings.Split(line, " ")[2])
 				if err != nil {
-					datetime := strings.Join(strings.Split(line, " ")[2:], " ")
-					qry.Time, err = time.Parse("060102 15:04:05", datetime)
-					if err != nil {
-						log.Errorf("worker: error parsing time '%s': %v", datetime, err)
+					splitted := strings.Split(line, " ")
+					if len(splitted) > 2 {
+						datetime := strings.Join(splitted, " ")
+						qry.Time, err = time.Parse("060102 15:04:05", datetime)
+						if err != nil {
+							log.Errorf("worker: error parsing time '%s': %v", datetime, err)
+						}
+					} else {
+						log.Errorf("worker: error parsing time in line '%s'", line)
 					}
 				}
 
@@ -531,13 +540,13 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 			default:
 				qry.FullQuery = line
 				if qry.FullQuery == "" {
-					log.Errorf("worker: got empty query at line %d", lineblock.pos)
+					log.Warnf("worker: got empty query at line %d", lineblock.pos)
 				}
 
 				// fmt.Printf("# call   : %s - %s\n", qry.FingerPrint, line)
 				fingerprint(&qry)
 				if qry.FingerPrint == "" {
-					log.Errorf("worker: got empty fingerprint after fingerprinting at line %d", lineblock.pos)
+					log.Warnf("worker: got empty fingerprint after fingerprinting at line %d", lineblock.pos)
 				}
 			}
 		}
@@ -667,6 +676,8 @@ func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
 		s = append(s, d)
 	}
 
+	fmt.Printf("sortkey is %s\n", Config.SortKey)
+
 	sort.Slice(s, func(i, j int) bool {
 		var a, b float64
 
@@ -774,6 +785,6 @@ func runFromCache(file string) bool {
 		entries.Queries = entries.Queries[:Config.Top]
 	}
 
-	outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
+	displayReport(entries.Queries, true)
 	return true
 }
