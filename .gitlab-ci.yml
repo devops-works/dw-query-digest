@@ -1,0 +1,31 @@
+---
+image: golang:1.14
+
+stages:
+  - test
+  - build
+
+go:tests:
+  stage: test
+  script:
+    - make test
+
+go:race:
+  stage: test
+  script:
+    - make test-race
+
+go:coverage:
+  stage: test
+  script:
+    - make test-coverage
+
+go:lint:
+  stage: test
+  script:
+    - make lint
+
+go:build:
+  stage: build
+  script:
+    - make
