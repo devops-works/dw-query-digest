@@ -38,6 +38,14 @@ docker:lint:
   extends: .docker_lint
   stage: lint
 
+markdown:lint:
+  extends: .lint_markdown
+  stage: lint
+
+yaml:lint:
+  extends: .lint_yaml
+  stage: lint
+
 go:test:
   extends: .golang_test
   stage: test
@@ -74,7 +82,7 @@ go:build:
 
 release:publish:
   stage: publish
-  image: python3
+  image: python:3-slim
   before_script:
     - pip3 install gitlab-release
   script:
