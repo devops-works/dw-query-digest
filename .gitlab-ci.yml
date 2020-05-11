@@ -4,6 +4,8 @@ include:
     file: code/golang.yml
   - project: devopsworks/templates/gitlab-ci
     file: code/generic.yml
+  - project: devopsworks/templates/gitlab-ci
+    file: docker/generic.yml
   - template: Code-Quality.gitlab-ci.yml
   - template: Dependency-Scanning.gitlab-ci.yml
   - template: SAST.gitlab-ci.yml
@@ -21,13 +23,18 @@ stages:
   - lint
   - test
   - build
+  - scan
 
 go:cilint:
   extends: .golang_cilint
   stage: lint
 
-go:imp:vet:
+go:vet:
   extends: .golang_vet
+  stage: lint
+
+docker:lint:
+  extends: .docker_lint
   stage: lint
 
 go:test:
@@ -54,3 +61,7 @@ go:build:
   stage: build
   script:
     - make
+
+docker:scan:
+  stage: scan
+  extends: .docker_scan_trivy
