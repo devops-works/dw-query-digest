@@ -1,22 +1,16 @@
-FROM golang:1.11 as builder
-
-ENV GO111MODULE=on
+FROM golang:1.14 as builder
 
 ARG version
 ARG builddate
 
-WORKDIR /go/src/github.com/devops-works/dw-query-digest/
+WORKDIR /go/src/gitlab.com/devopsworks/tools/dw-query-digest
 
 COPY go.mod .
 COPY go.sum .
 
 RUN go mod download
 
-# COPY . /go/src/github.com/devops-works/dw-query-digest/
-
 COPY . .
-
-# RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go install -a -tags netgo -ldflags '-w -extldflags "-static"' -o /go/bin/dw-query-digest
 
 RUN GOOS=linux \
     GOARCH=amd64 \
@@ -25,8 +19,6 @@ RUN GOOS=linux \
         -tags release \
         -ldflags '-w -extldflags "-static" -X main.Version=${version} -X main.BuildDate=${builddate}' -a \
         -o /go/bin/dw-query-digest
-
-
 
 FROM scratch
 

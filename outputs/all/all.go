@@ -2,8 +2,8 @@ package all
 
 import (
 	// No need to name imports here
-	_ "github.com/devops-works/dw-query-digest/outputs/greppable"
-	_ "github.com/devops-works/dw-query-digest/outputs/json"
-	_ "github.com/devops-works/dw-query-digest/outputs/null"
-	_ "github.com/devops-works/dw-query-digest/outputs/terminal"
+	_ "gitlab.com/devopsworks/tools/dw-query-digest/outputs/greppable"
+	_ "gitlab.com/devopsworks/tools/dw-query-digest/outputs/json"
+	_ "gitlab.com/devopsworks/tools/dw-query-digest/outputs/null"
+	_ "gitlab.com/devopsworks/tools/dw-query-digest/outputs/terminal"
 )

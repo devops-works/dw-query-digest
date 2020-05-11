@@ -18,10 +18,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/devops-works/dw-query-digest/outputs"
-	_ "github.com/devops-works/dw-query-digest/outputs/all"
 	"github.com/nxadm/tail"
 	log "github.com/sirupsen/logrus"
+	"gitlab.com/devopsworks/tools/dw-query-digest/outputs"
+	_ "gitlab.com/devopsworks/tools/dw-query-digest/outputs/all"
 	"gopkg.in/cheggaaa/pb.v1"
 )
 
@@ -426,7 +426,7 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 		}
 
 		// Skip duplicated header
-		// FIXME: this does not match "/usr/libexec/mysqld" (cf https://github.com/devops-works/dw-query-digest/issues/3)
+		// FIXME: this does not match "/usr/libexec/mysqld" (cf https://gitlab.com/devopsworks/tools/dw-query-digest/issues/3)
 		firstword := strings.Split(line, " ")[0]
 		if firstword == "mysqld," || firstword == "Tcp" || firstword == "Time" {
 			continue

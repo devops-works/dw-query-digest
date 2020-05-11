@@ -3,12 +3,13 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"github.com/devops-works/dw-query-digest/outputs"
-	"github.com/stretchr/testify/assert"
 	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"gitlab.com/devopsworks/tools/dw-query-digest/outputs"
 )
 
 // 2·   Shorten multi-value INSERT statements to a single VALUES() list.

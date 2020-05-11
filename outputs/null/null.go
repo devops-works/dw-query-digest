@@ -3,7 +3,7 @@ package null
 import (
 	"io"
 
-	outputs "github.com/devops-works/dw-query-digest/outputs"
+	outputs "gitlab.com/devopsworks/tools/dw-query-digest/outputs"
 )
 
 // Display show report in the terminal
