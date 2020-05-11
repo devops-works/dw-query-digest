@@ -50,9 +50,9 @@ func Display(servermeta outputs.ServerInfo, s outputs.QueryStatsSlice, w io.Writ
 // fsecsToDuration converts float seconds to time.Duration
 // Since we have float64 seconds durations
 // We first convert to µs (* 1e6) then to duration
-func fsecsToDuration(d float64) time.Duration {
-	return time.Duration(d*1e6) * time.Microsecond
-}
+// func fsecsToDuration(d float64) time.Duration {
+// 	return time.Duration(d*1e6) * time.Microsecond
+// }
 
 func init() {
 	outputs.Add("greppable", Display)

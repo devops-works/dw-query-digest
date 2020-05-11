@@ -75,7 +75,10 @@ func TestLineCounter(t *testing.T) {
 			defer os.Remove(f.Name())
 
 			for i := 0; i < tt; i++ {
-				f.WriteString("\n")
+				_, err = f.WriteString("\n")
+				if err != nil {
+					t.Fatalf("unable to write string: %v", err)
+				}
 			}
 
 			_, err = f.Seek(0, 0)
@@ -173,7 +176,10 @@ func BenchmarkLineCounter(b *testing.B) {
 	defer os.Remove(f.Name())
 
 	for i := 0; i < 100000; i++ {
-		f.WriteString("aaaa\n")
+		_, err = f.WriteString("aaaa\n")
+		if err != nil {
+			b.Fatalf("unable to write string aaaa: %v", err)
+		}
 	}
 
 	for n := 0; n < b.N; n++ {
@@ -182,7 +188,10 @@ func BenchmarkLineCounter(b *testing.B) {
 		if err != nil {
 			b.Fatalf("unable to seek to start")
 		}
-		lineCounter(f)
+		_, err = lineCounter(f)
+		if err != nil {
+			b.Fatalf("call to lineCounter failed: %v", err)
+		}
 	}
 
 	f.Close()
