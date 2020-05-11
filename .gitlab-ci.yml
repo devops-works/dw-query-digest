@@ -6,6 +6,8 @@ include:
     file: code/generic.yml
   - project: devopsworks/templates/gitlab-ci
     file: docker/generic.yml
+  - project: devopsworks/templates/gitlab-ci
+    file: testing/linters.yml
   # - template: Code-Quality.gitlab-ci.yml this is broken
   - template: Dependency-Scanning.gitlab-ci.yml
   - template: SAST.gitlab-ci.yml
