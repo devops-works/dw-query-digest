@@ -6,4 +6,3 @@ rules:
 
 ignore: |
     .cache/
-
