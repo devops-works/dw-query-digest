@@ -12,6 +12,7 @@ RUN go mod download
 
 COPY . .
 
+# hadolint disable=SC2016
 RUN GOOS=linux \
     GOARCH=amd64 \
     CGO_ENABLED=0 \
