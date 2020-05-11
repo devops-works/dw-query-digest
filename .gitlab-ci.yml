@@ -24,7 +24,7 @@ stages:
   - test
   - build
   - scan
-  - release
+  - publish
 
 go:cilint:
   extends: .golang_cilint
@@ -42,17 +42,17 @@ go:test:
   extends: .golang_test
   stage: test
 
-# go:gen:sast:
-#   extends: .code_sast
-#   stage: test
+go:gen:sast:
+  extends: .code_sast
+  stage: test
 
 go:coverage:
   extends: .golang_coverage
   stage: test
 
-# go:gen:depscan:
-#   extends: .code_depscan
-#   stage: test
+go:gen:depscan:
+  extends: .code_depscan
+  stage: test
 
 go:docker:
   extends: .golang_docker_build
@@ -67,12 +67,13 @@ go:build:
       - ./bin/*
     expire_in: 1 week
 
-docker:scan:
-  stage: scan
-  extends: .docker_scan_trivy
+# Does not work nor it's necessary with scratch images
+# docker:scan:
+#   stage: scan
+#   extends: .docker_scan_trivy
 
 release:publish:
-  stage: release
+  stage: publish
   image: python3
   before_script:
     - pip3 install gitlab-release
