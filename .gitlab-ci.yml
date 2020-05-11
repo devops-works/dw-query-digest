@@ -1,4 +1,13 @@
 ---
+include:
+  - project: devopsworks/templates/gitlab-ci
+    file: code/golang.yml
+  - project: devopsworks/templates/gitlab-ci
+    file: code/generic.yml
+  - template: Code-Quality.gitlab-ci.yml
+  - template: Dependency-Scanning.gitlab-ci.yml
+  - template: SAST.gitlab-ci.yml
+
 image: golang:1.14
 
 cache:
@@ -9,28 +18,37 @@ variables:
   GOPATH: "$CI_PROJECT_DIR/.cache"
 
 stages:
+  - lint
   - test
   - build
 
-go:tests:
-  stage: test
-  script:
-    - make test
+go:cilint:
+  extends: .golang_cilint
+  stage: lint
 
-go:race:
+go:imp:vet:
+  extends: .golang_vet
+  stage: lint
+
+go:test:
+  extends: .golang_test
   stage: test
-  script:
-    - make test-race
+
+# go:gen:sast:
+#   extends: .code_sast
+#   stage: test
 
 go:coverage:
+  extends: .golang_coverage
   stage: test
-  script:
-    - make test-coverage
 
-go:lint:
-  stage: test
-  script:
-    - make lint
+# go:gen:depscan:
+#   extends: .code_depscan
+#   stage: test
+
+go:docker:
+  extends: .golang_docker_build
+  stage: build
 
 go:build:
   stage: build
