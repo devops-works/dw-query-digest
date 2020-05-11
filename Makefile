@@ -42,12 +42,11 @@ windows: fmt lint clean $(BIN) ; $(info $(M) building static executable for Wind
 
 release: windows darwin linux ; $(info $(M) stripping release executable for Linux…) @ ## Build program binary
 	$Q strip $(BIN)/$(PACKAGE)-amd64-$(VERSION)
+	$Q $(BIN)/$(PACKAGE)-amd64-$(VERSION) -version
 	$Q (cd bin && sha256sum * > SHA256SUMS)
-	$Q cp $(BIN)/$(PACKAGE)-amd64-$(VERSION) $(BIN)/$(PACKAGE)
 	$Q gzip $(BIN)/$(PACKAGE)-amd64-$(VERSION)
 	$Q gzip $(BIN)/$(PACKAGE)-darwin-$(VERSION)
 	$Q gzip $(BIN)/$(PACKAGE)-win-$(VERSION)
-	$Q $(BIN)/$(PACKAGE) -version
 
 docker: ; $(info $(M) building docker image…) @ ## Build docker image
 	$Q docker build --build-arg version=$(VERSION) --build-arg builddate=$(DATE) . -t devopsworks/dw-query-digest:$(VERSION)

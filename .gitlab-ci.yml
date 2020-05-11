@@ -24,6 +24,7 @@ stages:
   - test
   - build
   - scan
+  - release
 
 go:cilint:
   extends: .golang_cilint
@@ -60,8 +61,26 @@ go:docker:
 go:build:
   stage: build
   script:
-    - make
+    - make release
+  artifacts:
+    paths:
+      - ./bin/*
+    expire_in: 1 week
 
 docker:scan:
   stage: scan
   extends: .docker_scan_trivy
+
+release:publish:
+  stage: release
+  image: python3
+  before_script:
+    - pip3 install gitlab-release
+  script:
+    - gitlab-release --link-artifact ./bin/*
+  artifacts:
+    paths:
+      - ./bin/*
+    expire_in: 1 week
+  only:
+    - tags
