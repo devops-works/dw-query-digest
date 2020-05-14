@@ -612,12 +612,12 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 		select {
 
 		case <-ticker.C:
-			displayReport(querylist, false)
+			displayReport(querylist, nil, false)
 
 		case qry, ok := <-queries:
 			if !ok {
 				tickerstoponce.Do(tickerStop)
-				displayReport(querylist, true)
+				displayReport(querylist, nil, true)
 				log.Info("aggregator exiting")
 				done <- true
 				return
@@ -662,14 +662,16 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 }
 
 // displayReport show a report given the select output
-func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
-	if final {
+func displayReport(querylist map[[32]byte]*outputs.QueryStats, sinfo *outputs.ServerInfo, final bool) {
+	if sinfo == nil {
 		servermeta.UniqueQueries = len(querylist)
 		servermeta.AnalysisEnd = time.Now()
 		servermeta.AnalysisDuration = servermeta.AnalysisEnd.Sub(servermeta.AnalysisStart).Seconds()
 		servermeta.AnalysedLinesPerSecond = float64(servermeta.CumLines) / servermeta.AnalysisDuration
 		servermeta.AnalysedBytesPerSecond = float64(servermeta.CumBytes) / servermeta.AnalysisDuration
 		servermeta.AnalysedQueriesPerSecond = float64(servermeta.QueryCount) / servermeta.AnalysisDuration
+	} else {
+		servermeta = *sinfo
 	}
 
 	s := make(outputs.QueryStatsSlice, 0, len(querylist))
@@ -678,7 +680,7 @@ func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
 		s = append(s, d)
 	}
 
-	fmt.Printf("sortkey is %s\n", Config.SortKey)
+	// fmt.Printf("sortkey is %s\n", Config.SortKey)
 
 	sort.Slice(s, func(i, j int) bool {
 		var a, b float64
@@ -794,7 +796,7 @@ func runFromCache(file string) bool {
 		mqs[h] = q
 	}
 
-	displayReport(mqs, false)
+	displayReport(mqs, &entries.Server, false)
 	// outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
 	return true
 }
