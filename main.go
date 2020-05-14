@@ -663,12 +663,14 @@ func aggregator(queries <-chan query, done chan<- bool, tickerdelay time.Duratio
 
 // displayReport show a report given the select output
 func displayReport(querylist map[[32]byte]*outputs.QueryStats, final bool) {
-	servermeta.UniqueQueries = len(querylist)
-	servermeta.AnalysisEnd = time.Now()
-	servermeta.AnalysisDuration = servermeta.AnalysisEnd.Sub(servermeta.AnalysisStart).Seconds()
-	servermeta.AnalysedLinesPerSecond = float64(servermeta.CumLines) / servermeta.AnalysisDuration
-	servermeta.AnalysedBytesPerSecond = float64(servermeta.CumBytes) / servermeta.AnalysisDuration
-	servermeta.AnalysedQueriesPerSecond = float64(servermeta.QueryCount) / servermeta.AnalysisDuration
+	if final {
+		servermeta.UniqueQueries = len(querylist)
+		servermeta.AnalysisEnd = time.Now()
+		servermeta.AnalysisDuration = servermeta.AnalysisEnd.Sub(servermeta.AnalysisStart).Seconds()
+		servermeta.AnalysedLinesPerSecond = float64(servermeta.CumLines) / servermeta.AnalysisDuration
+		servermeta.AnalysedBytesPerSecond = float64(servermeta.CumBytes) / servermeta.AnalysisDuration
+		servermeta.AnalysedQueriesPerSecond = float64(servermeta.QueryCount) / servermeta.AnalysisDuration
+	}
 
 	s := make(outputs.QueryStatsSlice, 0, len(querylist))
 	for _, d := range querylist {
@@ -785,6 +787,14 @@ func runFromCache(file string) bool {
 		entries.Queries = entries.Queries[:Config.Top]
 	}
 
-	outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
+	mqs := map[[32]byte]*outputs.QueryStats{}
+
+	for _, q := range entries.Queries {
+		h := q.Hash
+		mqs[h] = q
+	}
+
+	displayReport(mqs, false)
+	// outputs.Outputs[Config.Output](entries.Server, entries.Queries, os.Stdout)
 	return true
 }
