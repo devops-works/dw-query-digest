@@ -19,10 +19,6 @@ builds:
       - goos: darwin
         goarch: 386
 
-archives:
-  - format: binary
-    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}"
-
 checksum:
   name_template: 'checksums.txt'
 
