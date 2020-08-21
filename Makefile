@@ -26,27 +26,27 @@ linux: fmt lint $(BIN) ; $(info $(M) building static executable for Linux……)
 	$Q env GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
 		-tags release \
 		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
-		-o $(BIN)/$(PACKAGE)-amd64-$(VERSION)
+		-o $(BIN)/$(PACKAGE)-$(GOOS)-$(GOARCH)-$(VERSION)
 
 darwin: fmt lint $(BIN) ; $(info $(M) building static executable for MacOS…) @ ## Build program binary
 	$Q env GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
 		-tags release \
 		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
-		-o $(BIN)/$(PACKAGE)-darwin-$(VERSION)
+		-o $(BIN)/$(PACKAGE)-$(GOOS)-$(GOARCH)-$(VERSION)
 
 windows: fmt lint clean $(BIN) ; $(info $(M) building static executable for Windoze…) @ ## Build program binary
 	$Q env GOOS=windows GOARCH=amd64 CGO_ENABLED=0 $(GO) build \
 		-tags release \
 		-ldflags '-w -extldflags "-static" -X main.Version=$(VERSION) -X main.BuildDate=$(DATE)' -a \
-		-o $(BIN)/$(PACKAGE)-win-$(VERSION)
+		-o $(BIN)/$(PACKAGE)-$(GOOS)-$(GOARCH)-$(VERSION)
 
 release: windows darwin linux ; $(info $(M) stripping release executable for Linux…) @ ## Build program binary
-	$Q strip $(BIN)/$(PACKAGE)-amd64-$(VERSION)
-	$Q $(BIN)/$(PACKAGE)-amd64-$(VERSION) -version
+	$Q strip $(BIN)/$(PACKAGE)-linux-amd64-$(VERSION)
+	$Q $(BIN)/$(PACKAGE)-linux-amd64-$(VERSION) -version
 	$Q (cd bin && sha256sum * > SHA256SUMS)
-	$Q gzip $(BIN)/$(PACKAGE)-amd64-$(VERSION)
-	$Q gzip $(BIN)/$(PACKAGE)-darwin-$(VERSION)
-	$Q gzip $(BIN)/$(PACKAGE)-win-$(VERSION)
+	$Q gzip $(BIN)/$(PACKAGE)-linux-amd64-$(VERSION)
+	$Q gzip $(BIN)/$(PACKAGE)-darwin-amd64-$(VERSION)
+	$Q gzip $(BIN)/$(PACKAGE)-win-amd64$(VERSION)
 
 docker: ; $(info $(M) building docker image…) @ ## Build docker image
 	$Q docker build --build-arg version=$(VERSION) --build-arg builddate=$(DATE) . -t devopsworks/dw-query-digest:$(VERSION)
@@ -143,3 +143,9 @@ help:
 .PHONY: version
 version:
 	@echo $(VERSION)
+
+goreleaser-test: fmt lint clean ; $(info $(M) goreleaser dry-run…) @ ## Build program binary
+	goreleaser --snapshot --skip-publish --rm-dist
+
+goreleaser: fmt lint clean test; $(info $(M) create a release with goreleaser…) @ ## Build program binary
+	goreleaser --rm-dist
