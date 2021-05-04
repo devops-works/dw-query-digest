@@ -18,6 +18,9 @@ and approx 23s with `dw-query-digest` (6x faster).
 `dw-query-digest` normalizes SQL queries so identical queries can be aggregated
 in a report.
 
+See also https://github.com/devops-works/slowql for an alternative
+implementation and MySQL slow-query package.
+
 ## Usage
 
 ### Binary
@@ -204,6 +207,10 @@ docker stop mysql-test && docker rm mysql-test
 
 Some corners have been cut regarding query normalization. So YMMV regarding
 aggregations.
+
+Also, `dw-query-digest` does not support reading a header in the middle of a
+file (and will crash with a panic). This can happen if you `FLUSH LOGS` during
+a capture.
 
 ## Contributing
 

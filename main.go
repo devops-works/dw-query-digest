@@ -486,8 +486,8 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				log.Warnf("unable to parse line preamble for '%s'; skipping", line)
 				continue
 			}
-			switch strings.ToUpper(line[0:4]) {
 
+			switch strings.ToUpper(line[0:4]) {
 			case "# TI":
 				// # Time: 2018-12-17T15:18:58.744913Z
 				// or
