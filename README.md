@@ -19,7 +19,7 @@ and approx 23s with `dw-query-digest` (6x faster).
 in a report.
 
 See also https://github.com/devops-works/slowql for an alternative
-implementation and MySQL slow-query package.
+implementation conatianing a log replayer.
 
 ## Usage
 
