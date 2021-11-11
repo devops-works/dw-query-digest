@@ -2,7 +2,7 @@
 
 Alternative to `pt-query-digest`.
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/devops-works/tools/dw-query-digest)](https://goreportcard.com/report/github.com/devops-works/tools/dw-query-digest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/devops-works/dw-query-digest)](https://goreportcard.com/report/github.com/devops-works/dw-query-digest)
 [![MIT Licence](https://badges.frapsoft.com/os/mit/mit.svg?v=103)](https://opensource.org/licenses/mit-license.php)
 
 ## Purpose
