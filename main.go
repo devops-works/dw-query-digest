@@ -408,6 +408,7 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	read := 0
 	curline := 0
 	foldnext := false
+	hasQuery := false
 
 	for scanner.Scan() {
 		line = scanner.Text()
@@ -416,13 +417,15 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			bar.Increment()
 		}
 
-		// If we have `# Time`, send current entry and wipe clean and go on
-		if strings.HasPrefix(line, "# Time") {
+		// If we have `# ...`, send current entry and wipe clean and go on
+		if hasQuery && strings.HasPrefix(line, "# ") {
 			lines <- curentry
 			curline = -1
 			for i := range curentry.lines {
 				curentry.lines[i] = ""
 			}
+			hasQuery = false
+			foldnext = false
 		}
 
 		// Skip duplicated header
@@ -450,9 +453,12 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			firstchar := curentry.lines[curline][:1]
 			lastchar := curentry.lines[curline][len(curentry.lines[curline])-1:]
 
-			if lastchar != ";" && firstchar != "#" {
-				log.Debugf("line (%d) will fold after %s\n", read+1, firstword)
-				foldnext = true
+			if firstchar != "#" {
+				hasQuery = true
+				if lastchar != ";" {
+					log.Debugf("line (%d) will fold after %s\n", read+1, firstword)
+					foldnext = true
+				}
 			}
 		} else {
 			log.Warningf(`request to add element %d for line "%s" exceeds capacity`, curline, line)
