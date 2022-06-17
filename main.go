@@ -496,7 +496,7 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				if err != nil {
 					splitted := strings.Split(line, " ")
 					if len(splitted) > 2 {
-						datetime := strings.Join(splitted, " ")
+						datetime := strings.Join(splitted[2:], " ")
 						qry.Time, err = time.Parse("060102 15:04:05", datetime)
 						if err != nil {
 							log.Errorf("worker: error parsing time '%s': %v", datetime, err)
