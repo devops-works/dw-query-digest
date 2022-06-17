@@ -525,12 +525,21 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 
 			case "# QU": // "#Q"
 				// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
-				fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d",
-					&qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+				_, err := fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d", &qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+				if err != nil {
+					// mariadb
+					// # Query_time: 0.002718  Lock_time: 0.000139  Rows_sent: 25  Rows_examined: 35
+					fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d", &qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined)
+				}
 
 			case "# BY":
 				// # Bytes_sent: 561
 				fmt.Sscanf(line, "# Bytes_sent: %d", &qry.BytesSent)
+
+			case "# RO":
+				// mariadb
+				// # Rows_affected: 0  Bytes_sent: 252
+				fmt.Sscanf(line, "# Rows_affected: %d  Bytes_sent: %d", &qry.RowsAffected, &qry.BytesSent)
 
 			case "SET ":
 			case "USE ":
