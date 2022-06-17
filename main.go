@@ -344,7 +344,7 @@ func parseHeader(scanner *bufio.Scanner, meta *outputs.ServerInfo) error {
 	scanner.Scan()
 
 	// Parse server information
-	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([A-Za-z0-9-]+)\s+\((.*)\)\. started`)
+	versionre := regexp.MustCompile(`^([^,]+),\s+Version:\s+([0-9\.]+)([A-Za-z0-9-.]+)\s+\((.*)\)\. started`)
 	matches := versionre.FindStringSubmatch(version)
 
 	if len(matches) != 5 {
@@ -408,6 +408,7 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 	read := 0
 	curline := 0
 	foldnext := false
+	hasQuery := false
 
 	for scanner.Scan() {
 		line = scanner.Text()
@@ -416,13 +417,15 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			bar.Increment()
 		}
 
-		// If we have `# Time`, send current entry and wipe clean and go on
-		if strings.HasPrefix(line, "# Time") {
+		// If we have `# ...`, send current entry and wipe clean and go on
+		if hasQuery && strings.HasPrefix(line, "# ") {
 			lines <- curentry
 			curline = -1
 			for i := range curentry.lines {
 				curentry.lines[i] = ""
 			}
+			hasQuery = false
+			foldnext = false
 		}
 
 		// Skip duplicated header
@@ -450,9 +453,12 @@ func fileReader(wg *sync.WaitGroup, r io.Reader, lines chan<- logentry, count in
 			firstchar := curentry.lines[curline][:1]
 			lastchar := curentry.lines[curline][len(curentry.lines[curline])-1:]
 
-			if lastchar != ";" && firstchar != "#" {
-				log.Debugf("line (%d) will fold after %s\n", read+1, firstword)
-				foldnext = true
+			if firstchar != "#" {
+				hasQuery = true
+				if lastchar != ";" {
+					log.Debugf("line (%d) will fold after %s\n", read+1, firstword)
+					foldnext = true
+				}
 			}
 		} else {
 			log.Warningf(`request to add element %d for line "%s" exceeds capacity`, curline, line)
@@ -496,7 +502,7 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 				if err != nil {
 					splitted := strings.Split(line, " ")
 					if len(splitted) > 2 {
-						datetime := strings.Join(splitted, " ")
+						datetime := strings.Join(splitted[2:], " ")
 						qry.Time, err = time.Parse("060102 15:04:05", datetime)
 						if err != nil {
 							log.Errorf("worker: error parsing time '%s': %v", datetime, err)
@@ -525,12 +531,21 @@ func worker(wg *sync.WaitGroup, lines <-chan logentry, entries chan<- query) {
 
 			case "# QU": // "#Q"
 				// # Query_time: 0.000030  Lock_time: 0.000000  Rows_sent: 0  Rows_examined: 0  Rows_affected: 0
-				fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d",
-					&qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+				_, err := fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d  Rows_affected: %d", &qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined, &qry.RowsAffected)
+				if err != nil {
+					// mariadb
+					// # Query_time: 0.002718  Lock_time: 0.000139  Rows_sent: 25  Rows_examined: 35
+					fmt.Sscanf(line, "# Query_time: %f  Lock_time: %f  Rows_sent: %d  Rows_examined: %d", &qry.QueryTime, &qry.LockTime, &qry.RowsSent, &qry.RowsExamined)
+				}
 
 			case "# BY":
 				// # Bytes_sent: 561
 				fmt.Sscanf(line, "# Bytes_sent: %d", &qry.BytesSent)
+
+			case "# RO":
+				// mariadb
+				// # Rows_affected: 0  Bytes_sent: 252
+				fmt.Sscanf(line, "# Rows_affected: %d  Bytes_sent: %d", &qry.RowsAffected, &qry.BytesSent)
 
 			case "SET ":
 			case "USE ":

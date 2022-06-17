@@ -123,6 +123,21 @@ Time                 Id Command    Argument`,
 			},
 		},
 		{
+			label:  "ubuntu-20.04 mariadb header",
+			hasErr: false,
+			header: `/usr/sbin/mysqld, Version: 10.3.34-MariaDB-0ubuntu0.20.04.1-log (Ubuntu 20.04). started with:
+Tcp port: 3306  Unix socket: /run/mysqld/mysqld.sock
+Time		    Id Command	Argument`,
+			out: outputs.ServerInfo{
+				Binary:             "/usr/sbin/mysqld",
+				VersionShort:       "10.3.34",
+				Version:            "10.3.34-MariaDB-0ubuntu0.20.04.1-log",
+				VersionDescription: "Ubuntu 20.04",
+				TCPPort:            3306,
+				UnixSocket:         "/run/mysqld/mysqld.sock",
+			},
+		},
+		{
 			label:  "bad header",
 			hasErr: true,
 
